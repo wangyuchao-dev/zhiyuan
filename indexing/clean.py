@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import re
 import unicodedata
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -162,3 +163,72 @@ def quality_gate(
     if result.stats.get("kept_ratio", 1) < min_ratio:
         return False, f"清洗后仅保留 {result.stats['kept_ratio']:.0%}，请检查原文质量"
     return True, "ok"
+
+
+def quality_gate_stats(stats: dict[str, Any], min_ratio: float = 0.3, min_chars: int = 50):
+    """与 quality_gate 同一套判据，但直接吃 clean_pages 的统计。
+
+    逐页清洗拿不到整篇的 CleanResult，所以判据抽出来复用，
+    避免两条入库路径用两套标准（那种不一致最后一定查不出来源）。
+    """
+    kept = int(stats.get("kept_chars", 0))
+    ratio = float(stats.get("kept_ratio", 1.0))
+    if kept < min_chars:
+        return False, f"清洗后仅 {kept} 字，疑似扫描件或加密文档"
+    if ratio < min_ratio:
+        return False, f"清洗后仅保留 {ratio:.0%}，请检查原文质量"
+    return True, "ok"
+
+
+def clean_pages(pages: Sequence[Any]) -> tuple[list[Any], dict[str, Any]]:
+    """逐页清洗，但页眉页脚用**整篇**识别。
+
+    为什么要分开：
+        · 页眉页脚的特征是「跨页重复」，单页里它只出现一次，逐页清洗根本认不出来；
+        · 但也不能整篇洗完再切回页 —— 换页符在字符级清洗时就被抹掉了，
+          页码 metadata 会一起丢掉，答案的「第 N 页」出处就废了。
+
+    所以流程是：整篇拼起来找出重复行 → 回到每一页逐行删 → 其余规则逐页跑。
+
+    Args:
+        pages: 需要带 page_content 属性（Document 或任何同名属性的对象），原地修改。
+
+    Returns:
+        (清洗后的页列表, 统计)。统计里 kept_ratio 是入库门槛的依据。
+    """
+    if not pages:
+        return [], {"pages": 0, "kept_ratio": 1.0}
+
+    full = "\n\f\n".join(getattr(p, "page_content", "") or "" for p in pages)
+    repeated = {unicodedata.normalize("NFKC", r).strip() for r in find_repeated_lines(full)}
+
+    out: list[Any] = []
+    removed_hf, in_chars, kept_chars = 0, 0, 0
+    for page in pages:
+        raw = getattr(page, "page_content", "") or ""
+        in_chars += len(raw)
+
+        # 单页只跑字符级/页码/目录，页眉交给上面识别出的集合
+        res = clean_text(raw, drop_header_footer=False)
+        lines: list[str] = []
+        for line in res.text.split("\n"):
+            norm = unicodedata.normalize("NFKC", line.strip())
+            if norm and norm in repeated:
+                removed_hf += 1
+                continue
+            lines.append(line)
+
+        text = "\n".join(lines).strip()
+        page.page_content = text
+        kept_chars += len(text)
+        out.append(page)
+
+    stats = {
+        "pages": len(out),
+        "in_chars": in_chars,
+        "kept_chars": kept_chars,
+        "kept_ratio": round(kept_chars / max(1, in_chars), 3),
+        "removed_header_footer": removed_hf,
+        "repeated_lines": len(repeated),
+    }
+    return out, stats

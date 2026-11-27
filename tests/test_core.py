@@ -446,12 +446,14 @@ class TestMultiDoc(unittest.TestCase):
     def _pipe_stub(self):
         """不跑 __init__：避免构造 ChatTongyi（那需要 DASHSCOPE_API_KEY）"""
         from config.setting import QaConfig
+        from core.cache import build_cache
         from querying.pipeline import RagPipeline
 
         pipe = object.__new__(RagPipeline)
         pipe._config = QaConfig()
         pipe._vectorstores = {}
         pipe._hybrid_cache = {}
+        pipe._cache = build_cache(None)  # 进程内缓存，不连 Redis
         return pipe
 
     def test_query_multi_no_evidence_says_not_found_without_calling_model(self):

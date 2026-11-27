@@ -13,6 +13,7 @@ from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from api.deps import ServiceNotReady, get_agent, get_ingestor
 from api.schemas import DocumentUploadResponse
 from indexing.hash_calculate import HashCalculate
+from indexing.indexing_pipeline import IngestionRejected
 
 router = APIRouter(prefix="/api", tags=["documents"])
 
@@ -60,6 +61,10 @@ async def upload_document(
         # 算指纹 → 入库（已入过库的会跳过向量化）
         file_hash = HashCalculate().compute_hash_from_file(dest)
         _ingestor().build_from_source(dest)
+    except IngestionRejected as e:
+        # 文档本身不合格（扫描件/加密/几乎没文字）：400 让用户换文件，
+        # 用 500 会让人以为是服务挂了，反复重试同一份坏文件
+        raise HTTPException(status_code=400, detail=f"文档无法入库：{e}") from e
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"入库失败：{e}") from e
 

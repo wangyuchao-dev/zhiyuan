@@ -320,11 +320,14 @@ class Agent:
         else:
             memory = self._get_memory(session_id)
             if plan["route"] == "rag":
-                answer = self._rag.generate_answer(
+                raw = self._rag.generate_answer(
                     question,
                     memory.build_context(self._config.history_limit),
                     plan["context"],
                 )
+                # 生成后校验：证据里找不到的错误码/数字/日期一律拦掉换保守话术。
+                # 放在这里而不是流式里，是因为流式已经把字吐给前端了，收不回来。
+                answer, plan["postcheck"] = self._rag.verify(raw, plan["evidence"])
             elif plan["route"] == "chitchat":
                 answer = self._answer_chitchat(question, memory)
             else:
@@ -340,6 +343,7 @@ class Agent:
             "evidence": plan["evidence"],
             "search_query": plan["search_query"],
             "session_id": session_id,
+            "postcheck": plan.get("postcheck"),
         }
 
     def chat_stream(self, session_id: str, question: str):
@@ -390,8 +394,16 @@ class Agent:
                     yield {"event": "delta", "text": chunk}
                 answer = "".join(parts)
 
+            # 流式已经把字吐给前端了，正文改不了；这里只做检测，
+            # 把结果挂在 done 事件上 —— 前端可据此提示「本条未通过校验」，
+            # 离线统计也能拿到拦截率。检测不影响已经显示的答案。
+            # 固定答复（kind=answer，如「未找到相关资料」）是代码写死的，不用校验。
+            postcheck_info = None
+            if plan["kind"] != "answer" and plan["route"] == "rag" and answer:
+                _, postcheck_info = self._rag.verify(answer, plan["evidence"])
+
             self._remember(session_id, question, answer)
-            yield {"event": "done", "answer": answer}
+            yield {"event": "done", "answer": answer, "postcheck": postcheck_info}
         except Exception as e:
             import traceback
 

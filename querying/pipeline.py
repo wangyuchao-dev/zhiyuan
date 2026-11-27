@@ -14,6 +14,7 @@ import sys
 # 顶层 import 在模块加载时就执行，放到 __main__ 里再改 sys.path 已经晚了
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+import logging
 from typing import Any
 
 from langchain_chroma import Chroma
@@ -22,15 +23,56 @@ from langchain_community.embeddings import DashScopeEmbeddings
 from langchain_core.messages import BaseMessage
 
 from config.setting import QaConfig
+from core.cache import build_cache, corpus_fingerprint
+from core.context_budget import estimate_tokens
+from core.postcheck import postcheck
 from indexing.vector_storage import VectorStoreManager
 from querying.answer import AnswerGenerator
 from querying.hybrid_retriever import HybridRetriever
 
+log = logging.getLogger("querying.pipeline")
+
 # 用绝对导入：querying 目录没有 __init__.py，
 # 写 from .xxx import 直接运行时会报 "attempted relative import with no known parent package"
 from querying.query_rewrite import QueryRewriter
-from querying.retrank import RerankPipeline
+from querying.retrank import RerankPipeline, RetrievedEvidence
 from querying.rrf import rrf_fuse
+
+
+def _render_evidence(ev: RetrievedEvidence, idx: int) -> str:
+    """单条证据的上下文格式。
+
+    格式必须与提示词约定一致（`编号对应上下文的【证据N】`），
+    也和 RerankPipeline 内部保持一致 —— 两处格式不同会让引用编号对不上。
+    """
+    page = f"第{ev.page + 1}页" if ev.page is not None else "未知页"
+    return f"[证据{idx} | 来源：{ev.source} | {page}]\n{ev.content}"
+
+
+def _dump_evidence(ev: RetrievedEvidence) -> dict:
+    """证据对象 → 可 JSON 序列化的 dict（缓存用）"""
+    return {"content": ev.content, "source": ev.source, "page": ev.page, "score": ev.score}
+
+
+def _build_skills():
+    """建技能注册表；目录不存在或解析失败就返回 None（绝不阻断问答）。
+
+    技能是「锦上添花」：它规定同类问题的组织方式，不该成为启动的硬依赖。
+    """
+    from pathlib import Path
+
+    from skills.registry import SkillRegistry
+
+    root = Path(__file__).resolve().parent.parent / "skills"
+    if not root.is_dir():
+        return None
+    try:
+        reg = SkillRegistry(str(root))
+        reg.index()
+        return reg
+    except Exception as exc:
+        log.warning("技能注册表加载失败，按无技能运行：%s: %s", type(exc).__name__, exc)
+        return None
 
 
 class RagPipeline:
@@ -42,6 +84,14 @@ class RagPipeline:
         self._embeddings = DashScopeEmbeddings(model=self._config.embedding_model)
         self._vectorstores = {}  # 缓存向量库
         self._hybrid_cache = {}  # 缓存混合检索器（BM25 索引建一次就够）
+
+        # 检索缓存：key 里带「语料指纹」，加/删文档后自动失效，不靠人记得清。
+        # 没配 REDIS_URL 时自动退化成进程内缓存，服务照常起。
+        self._cache = build_cache(os.getenv("REDIS_URL"), namespace="zy")
+
+        # 技能注册表：只读 front-matter 建目录，命中才展开正文。
+        # 几十个技能也只占几行上下文 —— 全塞进提示词等于每次都付一遍钱。
+        self._skills = _build_skills()
 
         # 构造时就建好子组件（原来是懒加载，并行调用时可能拿到 None）
         self._rewriter = QueryRewriter(self._llm)
@@ -61,6 +111,20 @@ class RagPipeline:
         if cache_key not in self._hybrid_cache:
             self._hybrid_cache[cache_key] = HybridRetriever(vectorstore, self._config)
         return self._hybrid_cache[cache_key]
+
+    def skills_text(self, question: str) -> str:
+        """按问题匹配技能，返回要注入提示词的正文（没命中就是空串）。
+
+        匹配靠 front-matter 里的 keywords + summary，不做语义检索 ——
+        技能数量级是几十，关键词足够；真到几百个再换向量召回。
+        """
+        if not self._skills:
+            return ""
+        try:
+            return self._skills.render(question, max_skills=1)
+        except Exception as exc:  # 技能坏了不能拖垮问答
+            log.warning("技能渲染失败，按无技能处理：%s: %s", type(exc).__name__, exc)
+            return ""
 
     def rewrite_query(self, question: str, chat_history: list[BaseMessage]) -> str:
         """
@@ -129,8 +193,29 @@ class RagPipeline:
             # 注意：这里传【原始问题】而不是改写后的 search_query。
             # 改写的目的是「让检索更准」，不是「替换用户的话」——
             # 用户原话里的编号、时间、限定词一旦被改写丢掉，答案就会跑偏。
-            found["answer"] = self._answer_gen.generate(question, chat_history, found["context"])
+            raw = self._answer_gen.generate(
+                question, chat_history, found["context"], self.skills_text(question)
+            )
+            found["answer"], found["postcheck"] = self.verify(raw, found["evidence"])
         return found
+
+    def verify(self, answer: str, evidence_list: list[RetrievedEvidence]) -> tuple[str, dict]:
+        """生成后的校验：抓「证据里没有的错误码/数字/日期」。
+
+        刻意不做「自动改写数字」—— 把 15 分钟改回 5 分钟，等于用程序替模型
+        编第二个答案，比原来的错更危险。这里只做两件事：
+          · 关键事实在证据里找不到 → 整条替换为保守话术；
+          · 引用了不存在的片段编号 → 只移除编号，重排会把引用指错。
+        """
+        contents = [e.content for e in evidence_list]
+        report = postcheck(answer, contents, len(contents))
+        if not report.ok:
+            log.warning(
+                "后置校验未通过 action=%s kinds=%s",
+                report.action,
+                [v.kind for v in report.violations],
+            )
+        return report.answer, report.as_dict()
 
     def retrieve_multi(
         self,
@@ -164,6 +249,30 @@ class RagPipeline:
         # 1. 查询改写（消除指代，把追问变成能独立检索的查询）
         search_query = precomputed_query or self._rewriter.rewrite(question, chat_history)
 
+        # 1.5 检索缓存：改写之后、召回之前。
+        # key 用「改写后的查询」而不是原问题 —— 同一个问题在不同上下文里
+        # 改写结果不同（「那它呢」指代不同），用原问题做 key 会串答案。
+        # 参数也进 key：调了 recall_k / min_score 就应该是另一个结果。
+        fp = corpus_fingerprint(file_hashes or [])
+        cache_key = self._cache.build_key(
+            "retrieve",
+            search_query,
+            corpus_fp=fp,
+            params={
+                "recall_k": recall_k,
+                "top_k": top_k,
+                "min_score": self._config.min_score,
+                # 换了 embedding / rerank 模型，旧向量与旧分数都不再可比
+                "emb": self._config.embedding_model,
+                "rerank": self._config.rerank_model,
+            },
+        )
+        cached = self._cache.get_json(cache_key)
+        if cached and "context" in cached:
+            cached["evidence"] = [RetrievedEvidence(**e) for e in cached.get("evidence", [])]
+            cached["cached"] = True
+            return cached
+
         # 2. 逐份文档做混合召回
         per_doc_hits: list[list] = []
         for file_hash in file_hashes or []:
@@ -186,14 +295,18 @@ class RagPipeline:
             recalled_docs = rrf_fuse(per_doc_hits, k=self._config.rrf_k)
 
         # 4. 精排 + 阈值过滤（低于 QaConfig.min_score 的片段在这里被丢掉）
-        evidence_list, context = self._rerank_pipeline.rerank(
+        evidence_list, _ = self._rerank_pipeline.rerank(
             query=search_query,
             recalled_docs=recalled_docs,
             final_top_n=top_k,
         )
 
+        # 4.5 上下文预算：超出总预算的证据整条丢弃（不截断，半句话比没有更误导），
+        # 编号按保留后的顺序重排 —— 否则会出现 [1][3][5]，模型引用会乱。
+        evidence_list, context, ctx_stats = self._fit_budget(evidence_list)
+
         # 5. 只返回检索结果，生成交给调用方（普通问答 / 流式问答共用这一份）
-        return {
+        result = {
             "answer": "",
             "context": context,
             "evidence": evidence_list,
@@ -201,7 +314,41 @@ class RagPipeline:
             "rewritten": search_query != question,
             "doc_count": len(evidence_list),
             "doc_total": len(file_hashes or []),
+            "context_stats": ctx_stats,
+            "cached": False,
         }
+        # 命中率低的场景（同一份制度被反复问）收益最大；空结果不缓存（Cache 内部已挡）
+        self._cache.set_json(
+            cache_key,
+            {**result, "evidence": [_dump_evidence(e) for e in evidence_list]},
+        )
+        return result
+
+    def _fit_budget(self, evidence_list: list[RetrievedEvidence]):
+        """按总预算挑选证据，返回 (保留的证据, 上下文文本, 统计)。
+
+        按精排分数降序（rerank 已排好），装不下就停 —— 后面的分数更低，
+        硬塞进来只会稀释重点。至少保留一条：全丢等于告诉用户「没有」，
+        而实际上第一条可能就是答案。
+        """
+        budget = getattr(self._config, "context_budget", 2600)
+        kept: list[RetrievedEvidence] = []
+        used = 0
+        for ev in evidence_list:
+            cost = estimate_tokens(_render_evidence(ev, len(kept) + 1))
+            if kept and used + cost > budget:
+                break
+            kept.append(ev)
+            used += cost
+
+        context = "\n\n".join(_render_evidence(ev, idx) for idx, ev in enumerate(kept, 1))
+        stats = {
+            "budget": budget,
+            "used_tokens": used,
+            "kept": len(kept),
+            "dropped": max(0, len(evidence_list) - len(kept)),
+        }
+        return kept, context, stats
 
     def stream_answer(self, question: str, chat_history: list[BaseMessage], context: str):
         """
@@ -212,7 +359,7 @@ class RagPipeline:
             才能开始生成。所以流式只在「生成」这一段有意义，
             检索部分照旧同步执行，代码路径反而更简单。
         """
-        return self._answer_gen.stream(question, chat_history, context)
+        return self._answer_gen.stream(question, chat_history, context, self.skills_text(question))
 
     def generate_answer(self, question: str, chat_history: list[BaseMessage], context: str) -> str:
         """
@@ -224,4 +371,6 @@ class RagPipeline:
         """
         if not context:
             return "未找到相关资料。"
-        return self._answer_gen.generate(question, chat_history, context)
+        return self._answer_gen.generate(
+            question, chat_history, context, self.skills_text(question)
+        )

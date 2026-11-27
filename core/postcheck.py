@@ -27,7 +27,18 @@ _CODE = re.compile(r"\b([A-Z]{1,4}\d{2,6})\b")  # E1017 / HTTP500 / AL2026
 _NUM = re.compile(r"\d+(?:\.\d+)?")
 _DATE = re.compile(r"(20\d{2})[-/年](\d{1,2})[-/月](\d{1,2})")
 _CITE = re.compile(r"\[(\d{1,2})\]")
-_UNIT_NUM = re.compile(r"(\d+(?:\.\d+)?)\s*(分钟|小时|天|秒|MB|GB|厘米|米)")
+# 带单位的数字：单位必须是「换了就不是同一件事」的那种。
+# 「年」也在内 —— 「保留三年」写成「保留 99 年」是典型的数字漂移。
+# 值允许到 4 位（500MB、2026 年），但 4 位数的「年」在 check 里按日期处理，不在这里判。
+_UNIT_NUM = re.compile(
+    r"(\d+(?:\.\d+)?)\s*(年|个月|周|天|小时|分钟|秒|MB|GB|KB|厘米|米|类|项|倍|%)"
+)
+
+# 中文数字 → 阿拉伯：证据里写「三年」、答案写「3 年」时不该判为不一致。
+# 只转「单字数字 + 单位」这一种形态，避免把「第一」「三、流程」也改掉。
+_CN_DIGIT = str.maketrans("一二两三四五六七八九", "1223456789")
+_CN_UNIT = re.compile(r"([一二两三四五六七八九十])\s*(年|个月|周|天|小时|分钟|秒|类|项|倍)")
+_CN_TEN = re.compile(r"十")
 
 
 class Severity(StrEnum):
@@ -63,8 +74,31 @@ class CheckReport:
         }
 
 
+def _cn_num(s: str) -> int:
+    """中文数字（一~九十九）转整数。只用于「数字 + 单位」的比对，不追求通用性。"""
+    if s == "十":
+        return 10
+    if "十" in s:
+        head, _, tail = s.partition("十")
+        tens = int(head.translate(_CN_DIGIT)) if head else 1
+        ones = int(tail.translate(_CN_DIGIT)) if tail else 0
+        return tens * 10 + ones
+    return int(s.translate(_CN_DIGIT))
+
+
 def _norm(text: str) -> str:
-    return re.sub(r"\s+", "", (text or "")).upper()
+    """归一化：中文数字转阿拉伯 + 去空白 + 大写。
+
+    为什么要转中文数字：证据写「保留三年」、答案写「保留 3 年」，
+    不归一化就会被判成「数字不在证据里」，直接误杀正确答案。
+    只转「数字 + 单位」这一种形态 —— 不碰「第一」「三、流程」这类序数。
+    """
+    t = re.sub(
+        r"([一二两三四五六七八九十]+)\s*(年|个月|周|天|小时|分钟|秒|类|项|倍)",
+        lambda m: f"{_cn_num(m.group(1))}{m.group(2)}",
+        text or "",
+    )
+    return re.sub(r"\s+", "", t).upper()
 
 
 def check_codes(answer: str, evidence: Sequence[str]) -> list[Violation]:
@@ -89,6 +123,10 @@ def check_unit_numbers(answer: str, evidence: Sequence[str]) -> list[Violation]:
     pool = _norm(" ".join(evidence))
     out: list[Violation] = []
     for value, unit in set(_UNIT_NUM.findall(answer or "")):
+        # 4 位数的「年」是年份（2026 年），交给 check_dates 判，
+        # 否则每句「2026 年」都要在证据里找一遍，误报率高
+        if unit == "年" and len(value.split(".")[0]) >= 4:
+            continue
         if _norm(value + unit) not in pool:
             out.append(Violation("number", f"{value}{unit}", Severity.BLOCK))
     return out
