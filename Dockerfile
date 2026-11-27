@@ -21,7 +21,7 @@ COPY . .
 
 # 非 root：容器被拿下时，攻击者拿到的只是一个没有写权限的普通用户
 RUN useradd --create-home --uid 10001 app \
-    && mkdir -p /app/runtime /app/indexing/chroma_db/uploads \
+    && mkdir -p /app/runtime /app/indexing/chroma_db /app/uploads \
     && chown -R app:app /app/runtime /app/indexing/chroma_db /app/uploads
 USER app
 
