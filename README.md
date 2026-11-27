@@ -93,9 +93,33 @@ python -m http.server 8080 --directory web          # http://127.0.0.1:8080
 
 > 只看总数会骗人：编号类从 5/8 到 8/8 是结构性改善，语义类持平说明混合检索解决的不是语义泛化问题。
 
+## 评测（七维）
+
+不报单一「准确率」，而是拆七维：**结果 / 检索 / 证据 / 过程 / 稳定性 / 成本 / 安全**。
+用例 39 条（静态 20 / 动态 8 / 安全 6 / 故障 5），可离线跑、不花钱。
+
+```bash
+python eval/runner.py --suite all --runs 5 --adapter mock --variant hybrid-v1   # 验证链路
+python eval/runner.py --suite static --adapter live --doc <file_hash>           # 真跑
+python eval/report.py eval/results/a.json eval/results/b.json > report.md       # 版本对比
+```
+
+- 设计口径：[docs/eval-framework.md](docs/eval-framework.md)（七维怎么定义、静态/动态为什么分开、TSR 为什么只取首次）
+- 跑法与用例格式：[eval/README.md](eval/README.md)
+- 样例报告：[eval/results/sample-report.md](eval/results/sample-report.md) —— **mock 生成，只验证链路，数字不可引用**
+
+
 ## 已知边界
 
 - 34 题样本量小，看趋势不看绝对值；扩文档后要重跑
 - 单机 SQLite，没有并发压测；多 worker 下会话绑定仍在进程内存里（代码注释里写明了）
 - BM25 用 bi-gram 切词（不依赖 jieba），中文长词召回略弱于分词方案
 - 精排依赖 DashScope，离线环境会退化成「只用 RRF 排序」
+
+## 配套文档
+
+| 文档 | 内容 |
+|---|---|
+| [docs/agent-design.md](docs/agent-design.md) | 十个绕不开的设计问题：ReAct/Plan、Agent/Workflow、工具失败、多 Agent、MCP 与 Function Calling、记忆、召回、MCP/SKILL、评估、上下文 |
+| [docs/eval-framework.md](docs/eval-framework.md) | 七维评测的口径与局限，以及「表面对」为什么会骗人 |
+| [eval/README.md](eval/README.md) | 评测框架怎么跑、用例怎么写 |

@@ -16,3 +16,6 @@ uploads/*.pdf
 # 编辑器
 .idea/
 .vscode/
+
+# 评测产物（样例报告保留）
+eval/results/*.json
