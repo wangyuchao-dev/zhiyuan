@@ -35,6 +35,11 @@ querying/     query_rewrite · vector_retriever · bm25_retriever · rrf · hybr
               retrank（精排）· answer（生成）· pipeline（串联）· eval_retrieval / eval_single_doc（评测）
 agent/        intent（意图）· chat_history_manager · facts_manager · summary_manager
               memory（中枢）· persistence（SQLite）· orchestrator（主流程）
+              plan（显式计划 + 有界重试）· memory_policy（四类记忆与严格检索）
+core/         errors（五类错误 + 重试策略）· context_budget（上下文分级预算）
+tools/        registry（function calling 注册表）· mcp_adapter（MCP 描述互转）
+skills/       registry（懒加载）· fault-code-lookup/SKILL.md（示例技能）
+eval/         七维评测框架（见下方「评测」）
 api/          main（装配）· deps（懒加载）· schemas · routes/chat · routes/documents
 tests/        test_core（36 用例）· test_ingestion（入库冒烟）
 web/          index.html（Vue 3 单页）
