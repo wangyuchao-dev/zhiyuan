@@ -231,5 +231,75 @@ class TestPostcheckNumbers(unittest.TestCase):
         self.assertFalse(self._run("审计日志要留 5 年。[1]").ok)
 
 
+class TestRelaxedThreshold(unittest.TestCase):
+    """两段式阈值：严格阈值没命中时，够格的放宽一次，不够格的就拒答。
+
+    存在的理由：0.45 的严格阈值会砍掉「措辞和原文不同但答案确实在」的题。
+    但放宽必须有底线，否则就是把无关内容喂给模型 —— 那比答不出更糟。
+    """
+
+    def _pipe(self, ranked):
+        """ranked = [(doc, score)]，模拟精排过滤前的完整排序。"""
+        from querying.pipeline import RagPipeline
+
+        pipe = object.__new__(RagPipeline)
+        pipe._config = QaConfig()
+        pipe._config.min_score = 0.45
+        pipe._config.min_score_relaxed = 0.35
+        pipe._config.relaxed_top_n = 1
+        pipe._config.enable_relaxed = True
+        pipe._cache = build_cache(None)
+
+        class FakeRerank:
+            last_ranked = ranked
+
+            @staticmethod
+            def to_evidence(items):
+                from querying.retrank import RetrievedEvidence
+
+                evs = [
+                    RetrievedEvidence(content=d.page_content, source="a.pdf", page=0, score=s)
+                    for d, s in items
+                ]
+                return evs, ""
+
+        pipe._rerank_pipeline = FakeRerank()
+        return pipe
+
+    def test_normal_hit_does_not_relax(self):
+        pipe = self._pipe([])
+        existing = ["已有一条"]
+        out, relaxed = pipe._relax_if_empty(existing)
+        self.assertEqual(out, existing)
+        self.assertFalse(relaxed)
+
+    def test_empty_but_high_enough_relaxes_to_top1(self):
+        ranked = [(Document(page_content="候选一"), 0.43), (Document(page_content="候选二"), 0.41)]
+        out, relaxed = self._pipe(ranked)._relax_if_empty([])
+        self.assertTrue(relaxed)
+        self.assertEqual(len(out), 1, "降级只取 top-1，不整批放回")
+        self.assertEqual(out[0].content, "候选一")
+
+    def test_empty_and_too_low_keeps_refusing(self):
+        """最高分低于降级线 = 真无关，必须继续保持「没找到」。"""
+        ranked = [(Document(page_content="噪声"), 0.2)]
+        out, relaxed = self._pipe(ranked)._relax_if_empty([])
+        self.assertEqual(out, [])
+        self.assertFalse(relaxed)
+
+    def test_switch_off_never_relaxes(self):
+        ranked = [(Document(page_content="候选"), 0.43)]
+        pipe = self._pipe(ranked)
+        pipe._config.enable_relaxed = False
+        out, relaxed = pipe._relax_if_empty([])
+        self.assertEqual(out, [])
+        self.assertFalse(relaxed)
+
+    def test_no_candidates_at_all(self):
+        out, relaxed = self._pipe([])._relax_if_empty([])
+        self.assertEqual(out, [])
+        self.assertFalse(relaxed)
+
+
 if __name__ == "__main__":
     unittest.main()

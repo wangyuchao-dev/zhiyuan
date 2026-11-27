@@ -9,6 +9,17 @@
     · parent 按标题切（一级/二级标题天然是一个语义单元），没有标题时按段落聚合；
     · child 在 parent 内部按句子打包，句间留 overlap；
     · child 的 id 里带 parent 指针，检索命中后按 parent 去重，避免同一段进两次上下文。
+
+⚠️ 当前状态：**已实现、已测试，但未接入主链路**（rag_pipeline 没有调用它）。
+    原因是实测下来收益不成立，不是忘了接：
+      · 现有语料 3 份文档共 1300–4400 字，答案高度局部化，一条 200 字的 child
+        就装得下；把证据换成 parent（400–980 字）后，答案与用 child 时完全一致
+        （用「审计日志保留多久」「报销时限」「住宿标准」三问对照过）。
+      · 反过来代价是真的：parent 更占上下文预算，3 条证据会吃掉 3000 字，
+        超过 2600 token 的预算，反而要裁掉一条。
+    什么条件下值得接：单份文档到几万字、答案需要跨多个段落拼起来的时候。
+    接的时候要做三件事 —— child 存向量库并带上 parent 指针、检索后按 parent
+    去重展开、评测集的 evidence 粒度同步改成 parent。
 """
 
 from __future__ import annotations
@@ -53,6 +64,21 @@ def _hash(*parts: str) -> str:
     return hashlib.md5("|".join(parts).encode("utf-8")).hexdigest()[:10]
 
 
+def _paras(text: str) -> list[str]:
+    """把超长文本拆成可聚合的小段，供父块装箱。
+
+    先按空行拆；**没有空行就按句子拆**。
+    这一条是修 bug 加上的：PDF 提取出来的文本通常没有空行，
+    原来只按空行拆，1300 字的 PDF 会被判成「只有一个段落」，
+    于是整篇变成一个父块 —— 父子分块就退化成「每次都喂整篇」，等于没做。
+    """
+    parts = [p.strip() for p in re.split(r"\n\s*\n", text) if p.strip()]
+    if len(parts) > 1:
+        return parts
+    sents = [s.strip() for s in _SENT.findall(text) if s.strip()]
+    return sents or [text]
+
+
 def split_parents(doc_id: str, text: str, max_tokens: int = 900) -> list[Parent]:
     """按标题切父块；单块超过 max_tokens 时按段落再切一次。"""
     text = (text or "").strip()
@@ -81,7 +107,7 @@ def split_parents(doc_id: str, text: str, max_tokens: int = 900) -> list[Parent]
             continue
         # 太长：按空行分段，攒到接近上限就切一个父块
         buf, order = [], 0
-        for para in re.split(r"\n\s*\n", body):
+        for para in _paras(body):
             para = para.strip()
             if not para:
                 continue

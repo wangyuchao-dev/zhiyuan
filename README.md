@@ -2,8 +2,8 @@
 
 [![CI](https://github.com/wangyuchao-dev/zhiyuan/actions/workflows/ci.yml/badge.svg)](https://github.com/wangyuchao-dev/zhiyuan/actions/workflows/ci.yml)
 ![Python](https://img.shields.io/badge/python-3.12-blue)
-![Tests](https://img.shields.io/badge/tests-120-brightgreen)
-![Coverage](https://img.shields.io/badge/coverage-74.5%25-brightgreen)
+![Tests](https://img.shields.io/badge/tests-126-brightgreen)
+![Coverage](https://img.shields.io/badge/coverage-75%25-brightgreen)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
 把几十页制度 PDF 变成「问一句话、答案带出处」的知识库。
@@ -30,14 +30,14 @@
 | 语义类 | 11/13（85%） | 11/13（85%） | 持平——混合检索不是万灵药 |
 | 典型问答耗时 | 7 s | **2.3 s** | 规则快判意图省一次模型调用 + 无指代词时跳过改写 |
 
-单元测试 **120 个**，`pytest` **不联网、不花钱、不依赖数据库**，约 6 秒跑完，覆盖率 74.5%。
+单元测试 **126 个**，`pytest` **不联网、不花钱、不依赖数据库**，约 6 秒跑完，覆盖率 75%。
 
 ## 目录
 
 ```
 config/       setting.py（全部可调参数 + 环境分层）· prompts.py（6 块提示词）· version.py（版本单一来源）
 indexing/     clean（清洗与质量门槛）· hash_calculate（MD5 指纹）· upload_split（PDF 切分）
-              parent_child（父子分块）· vector_storage（写 Chroma）· indexing_pipeline
+              parent_child（父子分块，已实现未启用，原因见文件头）· vector_storage · indexing_pipeline
 querying/     query_rewrite · vector_retriever · bm25_retriever · rrf · hybrid_retriever
               retrank（精排）· answer（生成）· pipeline（串联）· eval_retrieval / eval_single_doc（评测）
 agent/        intent（意图）· chat_history_manager · facts_manager · summary_manager
@@ -50,9 +50,10 @@ skills/       registry（懒加载）· fault-code-lookup/SKILL.md（示例技�
 eval/         七维评测框架（见下方「评测」）
 api/          main（装配）· deps（懒加载）· middleware（请求 ID）· schemas
               routes/ops（health / ready / version）· routes/chat · routes/documents
-tests/        test_core · test_ingestion · test_agent_infra · test_data_pipeline（共 96 例）
+tests/        test_core · test_wiring · test_agent_infra · test_data_pipeline · test_logging（共 126 例）
+samples/      样例语料（6 份 PDF，见 samples/README.md）：常规文档 / 错误码手册 / 带页眉页脚 / 扫描件 / 长文档
 web/          index.html（Vue 3 单页）
-scripts/      check.ps1（与 CI 同款）· lint.ps1 · test.ps1
+scripts/      check.ps1（与 CI 同款）· lint.ps1 · test.ps1 · make_samples.py（重新生成样例）
 .github/      workflows/ci.yml · workflows/release.yml · PR 与 Issue 模板
 ```
 
@@ -79,7 +80,8 @@ docker compose up -d --build
 传一份 PDF 到 `uploads/`（或走 `POST /api/documents` 上传），系统会切分、向量化、写入 `indexing/chroma_db/`。
 首次没有向量库也能起服务：`/api/health` 只看进程活着，`/api/ready` 会逐项告诉你缺什么（密钥 / 向量库 / 运行目录）。
 
-> 仓库未附带知识库 PDF 与向量库（`.gitignore` 已排除），放任意 PDF 到 `uploads/` 即可复现。
+> 仓库自带 6 份样例语料在 `samples/`（见 `samples/README.md`），上传其中任意一份即可复现。
+> 向量库不随仓库提供（体积大、可重建），首次入库会自动生成。
 
 ## 工程化
 
@@ -159,7 +161,8 @@ powershell -ExecutionPolicy Bypass -File .\scripts\check.ps1
 | 意图 | 规则快判（寒暄/投诉/文档特征词）→ 判不出才调模型 | 模型超时 → 按「需要查文档」处理 |
 | 改写 | 有指代词才改写，否则跳过（省一次调用） | 改写失败 → 用原问题检索 |
 | 召回 | 向量 + BM25 **并行**，RRF 按名次融合（0.7/0.3） | 单路异常 → 只用另一路，记 `last_degraded` |
-| 精排 | qwen3-rerank + 阈值 0.3 | 接口抖动 → 退化为召回顺序，不过阈值 |
+| 精排 | qwen3-rerank + 阈值 0.45 | 接口抖动 → 退化为召回顺序，不过阈值 |
+| 阈值降级 | 严格阈值下为空、但最高分 ≥0.35 → 放宽一次只取 top-1 | 最高分不够格 → 保持「未找到」，绝不硬答 |
 | 预算 | 超总预算的证据整条丢弃，编号重排 | — |
 | 生成 | 只依据上下文，标注 `[N]` 出处；命中技能时按其格式作答 | — |
 | 校验 | 错误码/带单位数字/日期必须在证据里；引用越界只移除编号 | 不通过 → 换保守话术（不自动改数字） |
@@ -174,6 +177,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\check.ps1
 | 技能命中 | 468 字注入 | 「E1017 是什么错误」命中 `fault-code-lookup`，未命中的问题注入 0 字 |
 | 上下文预算 | 2600 token | 实测单次用 614–693 token，4 条证据全部装下、丢弃 0 条 |
 | 校验拦截 | 见测试 | 「保留 99 年」拦下；「三年」与「3 年」都放行（归一化后一致） |
+| 阈值调优 | 0.3 → 0.45 | 0.3 下 20 道题 **0 道被过滤**（等于没过滤）；0.45 下 5 道为空，靠降级救回 |
 
 ## 四个我认为值得说的设计
 

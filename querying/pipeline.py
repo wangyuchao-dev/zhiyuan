@@ -14,6 +14,7 @@ import sys
 # 顶层 import 在模块加载时就执行，放到 __main__ 里再改 sys.path 已经晚了
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+import contextlib
 import logging
 from typing import Any
 
@@ -270,6 +271,7 @@ class RagPipeline:
         cached = self._cache.get_json(cache_key)
         if cached and "context" in cached:
             cached["evidence"] = [RetrievedEvidence(**e) for e in cached.get("evidence", [])]
+            cached.setdefault("relaxed", False)
             cached["cached"] = True
             return cached
 
@@ -301,6 +303,9 @@ class RagPipeline:
             final_top_n=top_k,
         )
 
+        # 4.2 阈值降级：正常阈值下一条都不剩时，看最高分够不够放宽的资格
+        evidence_list, relaxed = self._relax_if_empty(evidence_list)
+
         # 4.5 上下文预算：超出总预算的证据整条丢弃（不截断，半句话比没有更误导），
         # 编号按保留后的顺序重排 —— 否则会出现 [1][3][5]，模型引用会乱。
         evidence_list, context, ctx_stats = self._fit_budget(evidence_list)
@@ -316,6 +321,9 @@ class RagPipeline:
             "doc_total": len(file_hashes or []),
             "context_stats": ctx_stats,
             "cached": False,
+            # 走了降级：这批证据是放宽阈值后拿到的，置信度低于正常路径。
+            # 上层可以在答案里提示一句，评测也靠它区分「严格命中」和「降级命中」
+            "relaxed": relaxed,
         }
         # 命中率低的场景（同一份制度被反复问）收益最大；空结果不缓存（Cache 内部已挡）
         self._cache.set_json(
@@ -323,6 +331,54 @@ class RagPipeline:
             {**result, "evidence": [_dump_evidence(e) for e in evidence_list]},
         )
         return result
+
+    def _relax_if_empty(self, evidence_list: list[RetrievedEvidence]):
+        """正常阈值下一条证据都不剩时，用降级阈值再挑一次（只挑 top-1）。
+
+        为什么需要这一步：min_score=0.45 会砍掉一部分「措辞和原文不同、但答案确实在」
+        的问题（实测 20 道题里 5 道），直接回「没找到」等于把能答的题答死。
+        但也不能无差别放宽 —— 最高分低于 min_score_relaxed 就是真无关，
+        放进来等于让模型拿着无关内容编，那比答不出更糟。
+
+        三个约束：
+          · 只降一次，不做循环放宽；
+          · 只取 top-N（默认 1 条），不把整批放回 —— 宁可少给，不硬塞；
+          · 每次都记一笔，频繁触发说明 min_score 该重测了。
+
+        Returns:
+            (证据列表, 是否走了降级)
+        """
+        if evidence_list:
+            return evidence_list, False
+
+        cfg = self._config
+        if not getattr(cfg, "enable_relaxed", True):
+            return [], False
+
+        relaxed_line = getattr(cfg, "min_score_relaxed", 0.0)
+        raw = getattr(self._rerank_pipeline, "last_ranked", None) or []
+
+        # 最高分都够不到降级线：说明这批候选和问题确实无关，保持「没找到」
+        if not raw or raw[0][1] is None or raw[0][1] < relaxed_line:
+            return [], False
+
+        keep = [(d, s) for d, s in raw if s is not None and s >= relaxed_line]
+        keep = keep[: getattr(cfg, "relaxed_top_n", 1)]
+        evs, _ = self._rerank_pipeline.to_evidence(keep)
+        if not evs:
+            return [], False
+
+        log.info(
+            "阈值降级：正常阈值下为空，放宽到 %.2f 取 %d 条（top1=%.3f）",
+            relaxed_line,
+            len(evs),
+            raw[0][1],
+        )
+        # 记降级次数（按天计）。这个数一直往上涨，说明 min_score 定高了。
+        # 计数失败不影响问答，所以直接吞掉。
+        with contextlib.suppress(Exception):
+            self._cache.incr("relaxed", 86400)
+        return evs, True
 
     def _fit_budget(self, evidence_list: list[RetrievedEvidence]):
         """按总预算挑选证据，返回 (保留的证据, 上下文文本, 统计)。

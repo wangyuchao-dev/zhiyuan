@@ -76,7 +76,9 @@ def main() -> None:
         print(f"  文档里有答案：{has_answer}")
         print(f"  召回 {len(recalled)} 条 → 过阈值 {len(evidence)} 条")
         print(f"  精排分数：{scores}")
-        print(f"  最高分：{top:.4f}　→　{'✅ 保留' if evidence else '❌ 被 0.3 阈值滤掉'}")
+        print(
+            f"  最高分：{top:.4f}　→　{'✅ 保留' if evidence else f'❌ 被 {cfg.min_score} 阈值滤掉'}"
+        )
         print()
 
     print("=" * 78)
@@ -85,11 +87,12 @@ def main() -> None:
         if has_answer == "无" and n_keep > 0:
             print(
                 f"  · 「{question}」文档里没有，但精排最高分 {top:.4f} 仍高于阈值 "
-                f"{cfg.min_score}，未被滤掉 —— 说明 0.3 对这个库偏松，0.4 更合适。"
+                f"{cfg.min_score}，未被滤掉 —— 说明当前阈值对这个库偏松，可以再往上调。"
             )
         elif has_answer == "无" and n_keep == 0:
             print(
-                f"  · 「{question}」文档里没有，已被阈值滤掉（最高分 {top:.4f}）—— 0.3 生效且够严。"
+                f"  · 「{question}」文档里没有，已被阈值滤掉（最高分 {top:.4f}）—— "
+                f"阈值 {cfg.min_score} 生效且够严。"
             )
     print("  注：分数会随模型版本与索引内容变化，写进文档时注明测量日期。")
 

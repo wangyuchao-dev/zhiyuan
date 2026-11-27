@@ -19,6 +19,12 @@ runtime/
 indexing/chroma_db/
 uploads/*.pdf
 
+# ---- 样例语料：故意入库 ----
+# samples/ 是仓库自带的测试语料（无敏感信息），别人 clone 下来要能直接跑冒烟测试；
+# 若哪天样例变大，应改用 Git LFS，而不是把它从仓库里排除。
+# !samples/*.pdf
+
+
 # ---- 评测产物（样例报告保留，逐次结果不入库）----
 eval/results/*.json
 

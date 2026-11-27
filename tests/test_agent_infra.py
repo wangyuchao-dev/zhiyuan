@@ -87,6 +87,22 @@ class TestParentChild(unittest.TestCase):
         self.assertEqual(len(parents), 2)
         self.assertIn("文档管理", parents[0].title)
 
+    def test_long_text_without_blank_lines_still_splits(self):
+        """无空行的长文本必须能切开。
+
+        PDF 提取出来的正文基本没有空行。原来只按空行分段，1300 字的 PDF
+        会被判成「只有一个段落」，整篇变成一个父块 —— 父子分块直接退化成
+        「每次喂整篇」，等于没做。这条是修那个 bug 时加的。
+        """
+        text = "".join(f"第{i}条：这是第{i}条规定的具体内容，需要占用一些篇幅。" for i in range(40))
+        self.assertNotIn("\n\n", text)  # 确认样本确实没有空行
+
+        parents = split_parents("d1", text, max_tokens=300)
+        self.assertGreater(len(parents), 1, "无空行长文本应当被切成多个父块")
+        # 切开后不能丢字（允许首尾空白差异）
+        joined = "".join(p.text for p in parents).replace("\n", "").replace(" ", "")
+        self.assertEqual(joined, text.replace(" ", ""))
+
     def test_children_point_to_parent(self):
         idx = ParentChildIndex(child_size=30, child_overlap=5)
         doc = idx.add("d1", self.DOC)
