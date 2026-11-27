@@ -1,0 +1,478 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>知渊 · 企业知识智能中枢</title>
+<script src="https://cdn.bootcdn.net/ajax/libs/vue/3.4.21/vue.global.prod.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --brand: #0b3d91;
+    --brand-2: #1e5bb8;
+    --brand-soft: #e8f0fb;
+    --ink: #1a1d23;
+    --muted: #6b7280;
+    --line: #e3e6ea;
+    --bg: #f2f4f7;
+  }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
+    background: var(--bg); color: var(--ink); height: 100vh;
+    display: flex; flex-direction: column; overflow: hidden;
+  }
+  /* 关键：body 是 flex 容器，子项必须显式撑满，否则会收缩到内容宽度 */
+  #app {
+    width: 100%; height: 100%;
+    display: flex; flex-direction: column; min-height: 0;
+  }
+
+  /* ===== 品牌栏 ===== */
+  .brand {
+    background: linear-gradient(96deg, #0b2f6e 0%, #0b3d91 42%, #1e5bb8 100%);
+    color: #fff; padding: 0 28px; height: 64px;
+    display: flex; align-items: center; gap: 14px; flex: 0 0 auto;
+    box-shadow: 0 2px 12px rgba(11, 47, 110, .24); z-index: 10;
+  }
+  .logo {
+    width: 36px; height: 36px; border-radius: 10px; flex: 0 0 auto;
+    background: rgba(255,255,255,.16); border: 1px solid rgba(255,255,255,.28);
+    display: grid; place-items: center; font-size: 19px; font-weight: 700;
+    letter-spacing: -1px;
+  }
+  .brand h1 { font-size: 17.5px; font-weight: 700; letter-spacing: .6px; }
+  .brand .tagline { font-size: 11.5px; opacity: .72; margin-top: 1px; letter-spacing: .3px; }
+  .brand .ver {
+    font-size: 10.5px; padding: 2px 7px; border-radius: 4px;
+    background: rgba(255,255,255,.16); border: 1px solid rgba(255,255,255,.22);
+    margin-left: 4px;
+  }
+  .brand .spacer { flex: 1; }
+  .status { font-size: 12px; display: flex; align-items: center; gap: 6px; opacity: .9; }
+  .status .dot {
+    width: 7px; height: 7px; border-radius: 50%; background: #4ade80;
+    box-shadow: 0 0 0 3px rgba(74,222,128,.22);
+  }
+  .status .dot.off { background: #f87171; box-shadow: 0 0 0 3px rgba(248,113,113,.22); }
+
+  /* ===== 主体 ===== */
+  .shell { flex: 1; display: flex; min-height: 0; }
+
+  .side {
+    width: 268px; flex: 0 0 auto; background: #fff; border-right: 1px solid var(--line);
+    display: flex; flex-direction: column; padding: 22px 18px; gap: 24px;
+    overflow-y: auto; overflow-x: hidden;
+  }
+  .side-sec h3 {
+    font-size: 11.5px; font-weight: 700; color: #9aa3af;
+    letter-spacing: 1.2px; margin-bottom: 11px;
+  }
+
+  /* 上传区（拖拽框，替代原生 file 控件） */
+  .dropzone {
+    border: 1.5px dashed #c9d6e8; border-radius: 12px;
+    padding: 22px 14px; text-align: center; cursor: pointer;
+    transition: .18s; background: #fafcff;
+  }
+  .dropzone:hover { border-color: var(--brand-2); background: #f3f8ff; }
+  .dropzone.filled { border-style: solid; border-color: #a7d7c5; background: #f7fdfa; }
+  .dropzone input[type=file] { display: none; }
+  .dz-ico { font-size: 24px; color: var(--brand-2); margin-bottom: 8px; line-height: 1; }
+  .dz-title { font-size: 14px; font-weight: 600; color: var(--brand); }
+  .dz-sub { font-size: 11.8px; color: var(--muted); margin-top: 6px; line-height: 1.65; }
+  .dz-file {
+    font-size: 13px; font-weight: 600; color: #047857;
+    word-break: break-all; line-height: 1.6;
+  }
+
+  .caps { display: flex; flex-direction: column; gap: 8px; }
+  .cap {
+    font-size: 12.8px; color: #4b5563; display: flex; align-items: center; gap: 9px;
+    padding: 9px 11px; border-radius: 8px; background: #f7f9fc;
+  }
+  .cap b { color: var(--brand); font-weight: 700; font-size: 12.5px; }
+  .cap .on { margin-left: auto; font-size: 11px; color: #059669; }
+
+  .main { flex: 1; display: flex; flex-direction: column; min-width: 0; padding: 20px 28px 14px; }
+
+  .chat { flex: 1; overflow-y: auto; padding: 4px 4px 8px; }
+  .msg { margin-bottom: 22px; display: flex; gap: 12px; }
+  .msg.user { flex-direction: row-reverse; }
+  .avatar {
+    width: 33px; height: 33px; border-radius: 10px; flex: 0 0 auto;
+    display: grid; place-items: center; font-size: 12.5px; font-weight: 700;
+  }
+  .msg.user .avatar { background: var(--brand-soft); color: var(--brand); }
+  .msg.bot .avatar { background: #d1fae5; color: #047857; }
+  .body { max-width: 78%; }
+  .bubble {
+    padding: 13px 17px; border-radius: 12px; font-size: 14.5px; line-height: 1.8;
+    word-break: break-word; background: #fff; border: 1px solid var(--line);
+    box-shadow: 0 1px 3px rgba(16,24,40,.04);
+  }
+  .msg.user .bubble { background: var(--brand); border-color: var(--brand); color: #fff; }
+  .bubble b { color: var(--brand); font-weight: 700; }
+  .msg.user .bubble b { color: #fff; }
+
+  .meta {
+    font-size: 12px; color: var(--muted); margin-top: 7px;
+    display: flex; gap: 9px; flex-wrap: wrap; align-items: center;
+  }
+  .tag { padding: 1.5px 8px; border-radius: 5px; font-weight: 600; font-size: 10.5px; }
+  .tag.rag { background: var(--brand-soft); color: var(--brand); }
+  .tag.chitchat { background: #fef3c7; color: #92400e; }
+  .tag.complaint { background: #fee2e2; color: #991b1b; }
+
+  .evidence {
+    margin-top: 9px; padding: 10px 12px; background: #fbfcfe;
+    border: 1px solid #e8eef7; border-left: 3px solid var(--brand-2);
+    border-radius: 0 7px 7px 0; font-size: 12.3px; color: #4b5563; line-height: 1.65;
+  }
+  .evidence .ev { margin-bottom: 6px; }
+  .evidence .ev:last-child { margin-bottom: 0; }
+  .evidence .idx { color: var(--brand); font-weight: 700; }
+  .evidence .sc { color: #059669; font-weight: 600; }
+
+  .composer {
+    flex: 0 0 auto; display: flex; gap: 10px; padding-top: 14px;
+    border-top: 1px solid var(--line);
+  }
+  .composer input {
+    flex: 1; padding: 13px 18px; border: 1px solid var(--line); border-radius: 11px;
+    font-size: 14px; outline: none; font-family: inherit; background: #fff; transition: .15s;
+  }
+  .composer input:focus { border-color: var(--brand-2); box-shadow: 0 0 0 3px rgba(30,91,184,.08); }
+  .btn {
+    padding: 0 20px; border-radius: 10px; border: 1px solid var(--line);
+    background: #fff; color: var(--brand); font-size: 13.5px; cursor: pointer;
+    font-family: inherit; transition: .15s; white-space: nowrap; height: 42px;
+  }
+  .btn:hover:not(:disabled) { border-color: var(--brand-2); }
+  .btn:disabled { opacity: .45; cursor: not-allowed; }
+  .btn.primary {
+    background: linear-gradient(96deg, #0b3d91, #1e5bb8); border: none; color: #fff;
+    font-weight: 600; box-shadow: 0 2px 8px rgba(11,61,145,.24);
+  }
+  .btn.primary:hover:not(:disabled) { filter: brightness(1.08); }
+  .btn.sm { height: 32px; padding: 0 12px; font-size: 12px; }
+
+  .upload-row { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; font-size: 12.5px; }
+  .upload-row input[type=file] { display: none; }
+
+  .welcome { text-align: center; padding: 58px 20px; color: var(--muted); }
+  .welcome .big { font-size: 19.5px; color: var(--brand); font-weight: 700; margin-bottom: 9px; }
+  .welcome .sub { font-size: 13.8px; line-height: 2.05; }
+  .welcome .chips { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; margin-top: 20px; }
+  .chip {
+    font-size: 12.5px; padding: 8px 14px; background: #fff; border: 1px solid var(--line);
+    border-radius: 20px; cursor: pointer; color: #4b5563; transition: .15s;
+  }
+  .chip:hover { border-color: var(--brand-2); color: var(--brand); }
+
+  .foot {
+    flex: 0 0 auto; text-align: center; font-size: 11.5px; color: #9ca3af; padding-top: 12px;
+  }
+</style>
+</head>
+<body>
+<div id="app">
+
+  <header class="brand">
+    <div class="logo">知</div>
+    <div>
+      <h1>知渊 · 企业知识智能中枢 <span class="ver">v1.0</span></h1>
+      <div class="tagline">Enterprise Knowledge Intelligence Platform</div>
+    </div>
+    <div class="spacer"></div>
+    <div class="status">
+      <span class="dot" :class="{ off: !online }"></span>
+      {{ online ? '服务正常' : '未连接' }}
+    </div>
+  </header>
+
+  <div class="shell">
+
+    <aside class="side">
+      <section class="side-sec">
+        <h3>知识库</h3>
+        <div class="dropzone" :class="{ filled: docName }"
+             @click="!uploading && $refs.fileInput.click()">
+          <input ref="fileInput" type="file" accept=".pdf" @change="onUpload">
+          <template v-if="!docName">
+            <div class="dz-ico">⬆</div>
+            <div class="dz-title">{{ uploading ? '正在解析…' : '点击上传文档' }}</div>
+            <div class="dz-sub">支持 PDF<br>自动切分并建立索引</div>
+          </template>
+          <template v-else>
+            <div class="dz-file">📄 {{ docName }}</div>
+            <div class="dz-sub">{{ uploading ? '正在解析…' : '已建立索引 · 点击更换' }}</div>
+          </template>
+        </div>
+      </section>
+
+      <section class="side-sec">
+        <h3>核心能力</h3>
+        <div class="caps">
+          <div class="cap"><b>灵犀</b>意图识别<span class="on">已启用</span></div>
+          <div class="cap"><b>洞阅</b>语义检索<span class="on">已启用</span></div>
+          <div class="cap"><b>记忆</b>多轮上下文<span class="on">已启用</span></div>
+        </div>
+      </section>
+
+      <section class="side-sec">
+        <h3>本次会话</h3>
+        <div class="cap" style="background:#fff;border:1px solid var(--line)">
+          问答 <b style="margin-left:auto">{{ qaCount }}</b> 次
+        </div>
+        <button class="btn sm" style="width:100%;margin-top:9px"
+                :disabled="!messages.length" @click="reset">清空会话</button>
+      </section>
+    </aside>
+
+    <main class="main">
+      <div class="chat" ref="chatBox">
+        <div v-if="!messages.length" class="welcome">
+          <div class="big">欢迎使用知渊</div>
+          <div class="sub">
+            上传企业文档后，可直接用自然语言提问<br>
+            系统会自动定位相关条款，并标注引用来源
+          </div>
+          <div class="chips">
+            <div class="chip" @click="fill('你好，你都能做什么？')">你好，你都能做什么？</div>
+            <div class="chip" v-if="docName" @click="fill('倒车入库多少秒不合格？')">倒车入库多少秒不合格？</div>
+            <div class="chip" v-if="docName" @click="fill('那这个项目有什么扣分情形？')">那这个项目有什么扣分情形？</div>
+          </div>
+        </div>
+
+        <div v-for="(m, i) in messages" :key="i" class="msg" :class="m.role">
+          <div class="avatar">{{ m.role === 'user' ? '我' : '知' }}</div>
+          <div class="body">
+            <div class="bubble" v-html="md(m.text)"></div>
+            <div v-if="m.role === 'bot' && m.meta" class="meta">
+              <span class="tag" :class="m.meta.route">
+                {{ routeLabel(m.meta.route) }}
+              </span>
+              <span>意图 {{ m.meta.intent }}</span>
+              <span v-if="m.meta.searchQuery && m.meta.searchQuery !== m.meta.question">
+                检索词：{{ m.meta.searchQuery }}
+              </span>
+            </div>
+            <div v-if="m.meta && m.meta.evidence && m.meta.evidence.length" class="evidence">
+              <div v-for="(e, j) in m.meta.evidence" :key="j" class="ev">
+                <span class="idx">[{{ j + 1 }}]</span>
+                <span class="sc">{{ e.score.toFixed(3) }}</span>
+                · {{ e.content }}…
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div v-if="thinking" class="msg bot">
+          <div class="avatar">知</div>
+          <div class="body"><div class="bubble" style="color:#6b7280">正在检索知识库…</div></div>
+        </div>
+      </div>
+
+      <div class="composer">
+        <input v-model="input" placeholder="请输入问题，回车发送"
+               :disabled="thinking" @keyup.enter="send">
+        <button class="btn primary" :disabled="!input.trim() || thinking" @click="send">发送</button>
+      </div>
+
+      <div class="foot">知渊 v1.0 · 企业内部知识库系统 · 答案由 AI 依据文档生成，请以原文为准</div>
+    </main>
+  </div>
+</div>
+
+<script>
+const { createApp } = Vue;
+
+createApp({
+  data() {
+    return {
+      sessionId: 'kb-' + Date.now(),
+      input: '',
+      messages: [],
+      thinking: false,
+      uploading: false,
+      docName: '',
+      online: false,
+      apiBase: 'http://127.0.0.1:8000',
+    };
+  },
+  computed: {
+    qaCount() { return this.messages.filter(m => m.role === 'user').length; },
+  },
+  mounted() { this.checkHealth(); },
+  methods: {
+    async checkHealth() {
+      try {
+        const r = await fetch(`${this.apiBase}/api/health`, { signal: AbortSignal.timeout(3000) });
+        this.online = r.ok;
+      } catch { this.online = false; }
+    },
+
+    fill(text) {
+      this.input = text;
+      this.$nextTick(() => this.send());
+    },
+
+    routeLabel(route) {
+      const map = { rag: '文档检索', chitchat: '闲聊', complaint: '投诉处理' };
+      return map[route] || route;
+    },
+
+    md(text) {
+      const esc = String(text)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      return esc.replace(/\*\*(.+?)\*\*/g, '<b>$1</b>');
+    },
+
+    async onUpload(e) {
+      const file = e.target.files[0];
+      if (!file) return;
+      this.uploading = true;
+      try {
+        const fd = new FormData();
+        fd.append('session_id', this.sessionId);
+        fd.append('file', file);
+        const r = await fetch(`${this.apiBase}/api/documents`, { method: 'POST', body: fd });
+        const d = await r.json();
+        if (!r.ok) throw new Error(d.detail || '上传失败');
+        this.docName = d.filename;
+        const n = d.bound_count || 1;
+        this.messages.push({
+          role: 'bot',
+          text: n > 1
+            ? `已接收 **${d.filename}**，知识库构建完成。本会话共 **${n} 份文档**，提问会跨这些文档一起检索。`
+            : `已接收 **${d.filename}**，知识库构建完成。可以继续上传更多文档，提问时会跨文档检索。`,
+        });
+        this.scrollDown();
+        this.checkHealth();
+      } catch (err) {
+        this.messages.push({ role: 'bot', text: '文档解析失败：' + err.message });
+      } finally {
+        this.uploading = false;
+        e.target.value = '';
+      }
+    },
+
+    async send() {
+      const q = this.input.trim();
+      if (!q || this.thinking) return;
+
+      this.messages.push({ role: 'user', text: q });
+      this.input = '';
+      this.thinking = true;
+      this.scrollDown();
+
+      // 先占一条空的 bot 消息，流式数据到了直接往里追字，
+      // 这样用户看到的是「一个字一个字蹦出来」，而不是干等整段。
+      const botMsg = { role: 'bot', text: '', meta: { question: q, streaming: true } };
+      this.messages.push(botMsg);
+
+      try {
+        await this.streamAnswer(q, botMsg);
+        botMsg.meta.streaming = false;
+        this.online = true;
+      } catch (err) {
+        // 流式不可用（老浏览器 / 代理不支持 / 后端异常）→ 退回一次性接口
+        botMsg.text = '';
+        try {
+          const r = await fetch(`${this.apiBase}/api/chat`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ session_id: this.sessionId, question: q }),
+          });
+          const d = await r.json();
+          if (!r.ok) throw new Error(d.detail || '请求失败');
+          botMsg.text = d.answer;
+          botMsg.meta = {
+            route: d.route, intent: d.intent, confidence: d.confidence,
+            searchQuery: d.search_query, question: q, evidence: d.evidence,
+          };
+          this.online = true;
+        } catch (err2) {
+          botMsg.text = '服务异常：' + (err2.message || err.message);
+          this.online = false;
+        }
+      } finally {
+        botMsg.meta.streaming = false;
+        this.thinking = false;
+        this.scrollDown();
+      }
+    },
+
+    /**
+     * 读 SSE 流并实时渲染。
+     * 用 fetch + ReadableStream 而不是 EventSource：EventSource 只支持 GET，
+     * 而我们的接口是 POST 且要带 JSON body。
+     */
+    async streamAnswer(q, botMsg) {
+      const r = await fetch(`${this.apiBase}/api/chat/stream`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ session_id: this.sessionId, question: q }),
+      });
+      if (!r.ok || !r.body) throw new Error('流式接口不可用');
+
+      const reader = r.body.getReader();
+      const decoder = new TextDecoder('utf-8');
+      let buf = '';
+
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+
+        // SSE 帧以空行分隔；可能一次读到半个帧，所以按 \n\n 切完要留残余
+        const frames = buf.split('\n\n');
+        buf = frames.pop();
+
+        for (const frame of frames) {
+          const line = frame.trim();
+          if (!line.startsWith('data:')) continue;
+          const payload = line.slice(5).trim();
+          if (payload === '[DONE]') return;
+
+          let ev;
+          try { ev = JSON.parse(payload); } catch { continue; }
+
+          if (ev.event === 'meta') {
+            botMsg.meta.route = ev.route;
+            botMsg.meta.intent = ev.intent;
+            botMsg.meta.confidence = ev.confidence;
+            botMsg.meta.searchQuery = ev.search_query;
+          } else if (ev.event === 'evidence') {
+            botMsg.meta.evidence = ev.evidence;
+          } else if (ev.event === 'delta') {
+            botMsg.text += ev.text;
+            this.scrollDown();
+          } else if (ev.event === 'error') {
+            botMsg.text += (botMsg.text ? '\n\n' : '') + '（生成中断：' + ev.message + '）';
+          }
+        }
+      }
+    },
+
+    async reset() {
+      try {
+        const fd = new FormData();
+        fd.append('session_id', this.sessionId);
+        await fetch(`${this.apiBase}/api/reset`, { method: 'POST', body: fd });
+      } catch {}
+      this.messages = [];
+      this.docName = '';
+    },
+
+    scrollDown() {
+      this.$nextTick(() => {
+        const box = this.$refs.chatBox;
+        if (box) box.scrollTop = box.scrollHeight;
+      });
+    },
+  },
+}).mount('#app');
+</script>
+</body>
+</html>
