@@ -11,6 +11,9 @@ python eval/runner.py --suite static --runs 1 --adapter live --doc <file_hash>
 
 # 3. 出报告（可传多个结果文件做版本对比）
 python eval/report.py eval/results/a.json eval/results/b.json > eval/results/report.md
+
+# 4. 错误修复率与回归（按 case_id 对齐，只比第 1 次运行）
+python eval/compare.py eval/results/旧.json eval/results/新.json
 ```
 
 ## 目录
@@ -25,7 +28,8 @@ eval/
 ├─ metrics.py             # 七维指标，纯函数，可单独单测
 ├─ adapters.py            # mock（造数据）/ live（真跑 Agent）
 ├─ runner.py              # 跑批、多次重复、落 JSON
-├─ report.py              # JSON → markdown 报告
+├─ report.py              # JSON → markdown 报告（七维）
+├─ compare.py             # 两版本对齐：错误修复率 / 回归清单
 └─ results/               # 产出（*.json 不入库，sample-report.md 保留）
 ```
 
