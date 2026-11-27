@@ -2,6 +2,7 @@
 
 两个对话接口共用 Agent 的同一套路由逻辑，区别只在「怎么把答案吐出去」。
 所有路由都做了异常兜底，不让外部服务抖动变成 500。"""
+
 import json
 import os
 import sys
@@ -11,7 +12,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspa
 from fastapi import APIRouter, Form, HTTPException
 from fastapi.responses import StreamingResponse
 
-from api.deps import get_agent
+from api.deps import ServiceNotReady, get_agent
 from api.schemas import ChatRequest, ChatResponse, EvidenceItem, ResetResponse
 
 router = APIRouter(prefix="/api", tags=["chat"])
@@ -28,12 +29,6 @@ def _sse(payload: dict) -> str:
     return f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
 
 
-@router.get("/health")
-def health():
-    """健康检查：不依赖任何外部服务，用来确认进程活着"""
-    return {"status": "ok"}
-
-
 @router.post("/chat", response_model=ChatResponse)
 def chat(req: ChatRequest):
     """对话：意图识别 → 路由 → 检索/闲聊 → 记忆回写"""
@@ -45,8 +40,20 @@ def chat(req: ChatRequest):
     # 同时把完整堆栈打进服务端日志，方便定位。
     try:
         result = get_agent().chat(req.session_id, req.question)
+    except ServiceNotReady as e:
+        # 配置缺失不是「稍后重试就能好」，含糊话术只会让人反复重试
+        print(f"[chat] 依赖未就绪: {e}")
+        return ChatResponse(
+            answer=str(e),
+            intent="error",
+            confidence=0.0,
+            route="not_ready",
+            search_query=None,
+            evidence=[],
+        )
     except Exception as e:
         import traceback
+
         traceback.print_exc()
         print(f"[chat] 处理失败 session={req.session_id}: {type(e).__name__}: {e}")
         return ChatResponse(
@@ -102,8 +109,12 @@ def chat_stream(req: ChatRequest):
         try:
             for ev in get_agent().chat_stream(req.session_id, req.question):
                 yield _sse(ev)
+        except ServiceNotReady as e:
+            print(f"[chat/stream] 依赖未就绪: {e}")
+            yield _sse({"event": "error", "message": str(e)})
         except Exception as e:
             import traceback
+
             traceback.print_exc()
             yield _sse({"event": "error", "message": f"{type(e).__name__}: {e}"})
         finally:
@@ -114,9 +125,9 @@ def chat_stream(req: ChatRequest):
         event_source(),
         media_type="text/event-stream",
         headers={
-            "Cache-Control": "no-cache",       # 别让浏览器缓存流
+            "Cache-Control": "no-cache",  # 别让浏览器缓存流
             "Connection": "keep-alive",
-            "X-Accel-Buffering": "no",         # 有反向代理时禁用缓冲，否则流会被攒住
+            "X-Accel-Buffering": "no",  # 有反向代理时禁用缓冲，否则流会被攒住
         },
     )
 
@@ -128,6 +139,7 @@ def reset(session_id: str = Form(...)):
         get_agent().reset_session(session_id)
     except Exception as e:
         import traceback
+
         traceback.print_exc()
-        raise HTTPException(status_code=503, detail=f"重置失败：{type(e).__name__}")
+        raise HTTPException(status_code=503, detail=f"重置失败：{type(e).__name__}") from e
     return ResetResponse(ok=True, message=f"会话 {session_id} 已重置")
