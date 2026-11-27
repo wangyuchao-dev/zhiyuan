@@ -55,6 +55,9 @@ class QaConfig:
 
     # ===== 记忆 =====
     history_limit: int = 6  # 喂给模型的最近消息条数
+    # 上下文总预算（按 token 估）：证据全塞进去会挤掉对话历史，
+    # 也会让模型抓不住重点。超预算的整条丢弃，不做截断（半句话比没有更误导）。
+    context_budget: int = 2600
     # 记忆落库路径：历史 / 事实槽 / 摘要都存在这个 SQLite 文件里，进程重启不丢。
     # 想换成 Redis，只改 agent/persistence.py，上层三个 Manager 不用动。
     memory_db_path: str = str(_PROJECT_ROOT / "runtime" / "memory.db")
