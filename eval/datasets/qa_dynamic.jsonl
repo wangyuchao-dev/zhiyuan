@@ -1,0 +1,8 @@
+{"id": "d01", "suite": "dynamic", "question": "单个文档的大小上限是多少？", "follow_ups": ["超过这个大小怎么办？"], "expected_evidence": ["企业知识库文档管理规范#1"], "k_range": [3, 5], "evidence_text": "单个文档不得超过 50 MB，超过需拆分后上传。"}
+{"id": "d02", "suite": "dynamic", "question": "E1017 是什么错误？", "follow_ups": ["那 E2043 呢？"], "expected_evidence": ["智云平台故障排查手册#3"], "k_range": [3, 5], "evidence_text": "E1017：任务调度超时；E2043：对象存储连接失败。"}
+{"id": "d03", "suite": "dynamic", "question": "科目二倒车入库怎么判？", "follow_ups": ["侧方停车呢？"], "expected_evidence": ["机动车驾驶人科目二考试项目与评判标准#2"], "k_range": [3, 5], "evidence_text": "倒车入库车身出线不合格；侧方停车限时 90 秒。"}
+{"id": "d04", "suite": "dynamic", "question": "我们部门上传的文档别人能看到吗？", "follow_ups": ["那我可以删掉别人上传的吗？"], "expected_evidence": ["企业知识库文档管理规范#3"], "k_range": [3, 5], "evidence_text": "文档默认仅本部门可见；删除权限仅管理员与部门管理员具备。"}
+{"id": "d05", "suite": "dynamic", "question": "上传后多久能搜到？", "follow_ups": ["如果超过这个时间还没出来呢？"], "expected_evidence": ["企业知识库文档管理规范#2"], "k_range": [3, 5], "evidence_text": "5 分钟内完成入库；超时可在管理后台查看解析队列状态。"}
+{"id": "d06", "suite": "dynamic", "question": "平台日志在哪看？", "follow_ups": ["日志能保留多久？"], "expected_evidence": ["智云平台故障排查手册#2"], "k_range": [3, 5], "evidence_text": "日志默认 /var/log/zhihui，保留 15 天。"}
+{"id": "d07", "suite": "dynamic", "question": "倒车入库有什么要求？", "follow_ups": ["那坡道呢？"], "expected_evidence": ["机动车驾驶人科目二考试项目与评判标准#2"], "k_range": [3, 5], "evidence_text": "倒车入库不得出线；坡道定点距边线超 30 厘米扣 10 分。"}
+{"id": "d08", "suite": "dynamic", "question": "知识库支持哪些格式？", "follow_ups": ["我刚才问的是哪个问题？"], "expected_evidence": ["企业知识库文档管理规范#1"], "k_range": [3, 5], "evidence_text": "支持 PDF、Word、txt；对话需记住上一轮问题。"}

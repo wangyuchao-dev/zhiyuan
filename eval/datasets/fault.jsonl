@@ -1,0 +1,5 @@
+{"id": "f01", "suite": "fault", "question": "文档大小上限是多少？", "fault": "http_500", "expected_evidence": ["企业知识库文档管理规范#1"], "k_range": [3, 5], "evidence_text": "单个文档不得超过 50 MB。"}
+{"id": "f02", "suite": "fault", "question": "E1017 是什么错误？", "fault": "timeout", "expected_evidence": ["智云平台故障排查手册#3"], "k_range": [3, 5], "evidence_text": "E1017：任务调度超时。"}
+{"id": "f03", "suite": "fault", "question": "科目二有几次机会？", "fault": "slow_response", "expected_evidence": ["机动车驾驶人科目二考试项目与评判标准#1"], "k_range": [3, 5], "evidence_text": "每个科目考试一次，可补考一次。"}
+{"id": "f04", "suite": "fault", "question": "日志在哪里看？", "fault": "empty_evidence", "expected_evidence": ["智云平台故障排查手册#2"], "k_range": [0, 0], "evidence_text": ""}
+{"id": "f05", "suite": "fault", "question": "文档更新后旧版本保留吗？", "fault": "truncated", "expected_evidence": ["企业知识库文档管理规范#4"], "k_range": [3, 5], "evidence_text": "同名文档重新上传会覆盖旧版本。"}

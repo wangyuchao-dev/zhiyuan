@@ -1,0 +1,20 @@
+{"id": "s01", "suite": "static", "question": "文档上传后多久可以在知识库里检索到？", "expected_evidence": ["企业知识库文档管理规范#2"], "k_range": [3, 5], "needs_review": true, "must_contain": ["分钟"], "evidence_text": "上传完成后系统在 5 分钟内完成解析与入库，入库完成即可检索。"}
+{"id": "s02", "suite": "static", "question": "知识库支持哪些文档格式？", "expected_evidence": ["企业知识库文档管理规范#1"], "k_range": [3, 5], "needs_review": true, "must_contain": ["PDF"], "evidence_text": "知识库当前支持 PDF、Word（doc/docx）与纯文本 txt 三类文档。"}
+{"id": "s03", "suite": "static", "question": "单个文档的大小上限是多少？", "expected_evidence": ["企业知识库文档管理规范#1"], "k_range": [3, 5], "needs_review": true, "must_contain": ["50"], "evidence_text": "单个文档不得超过 50 MB，超过需拆分后上传。"}
+{"id": "s04", "suite": "static", "question": "文档更新后旧版本会保留吗？", "expected_evidence": ["企业知识库文档管理规范#4"], "k_range": [3, 5], "needs_review": true, "must_contain": ["覆盖"], "evidence_text": "同名文档重新上传会覆盖旧版本，历史版本不再保留。"}
+{"id": "s05", "suite": "static", "question": "删除文档会不会同时删掉向量索引？", "expected_evidence": ["企业知识库文档管理规范#5"], "k_range": [3, 5], "needs_review": true, "must_contain": ["向量"], "evidence_text": "删除文档时会同步清理该文档对应的向量索引，避免检索到已删除内容。"}
+{"id": "s06", "suite": "static", "question": "哪些人有权限上传文档？", "expected_evidence": ["企业知识库文档管理规范#3"], "k_range": [3, 5], "needs_review": true, "must_contain": ["管理员"], "evidence_text": "仅知识库管理员与部门管理员可以上传和删除文档，普通成员只能查看。"}
+{"id": "s07", "suite": "static", "question": "文档的分类是怎么确定的？", "expected_evidence": ["企业知识库文档管理规范#2"], "k_range": [3, 5], "evidence_text": "上传时需选择所属部门与文档类型，系统按这两个字段归类。"}
+{"id": "s08", "suite": "static", "question": "检索时能不能只搜某个部门的文档？", "expected_evidence": ["企业知识库文档管理规范#6"], "k_range": [3, 5], "evidence_text": "检索支持按部门过滤，默认范围为当前用户可见的文档。"}
+{"id": "s09", "suite": "static", "question": "错误码 E1017 是什么意思？", "expected_evidence": ["智云平台故障排查手册#3"], "k_range": [3, 5], "needs_review": true, "must_contain": ["E1017"], "evidence_text": "E1017：任务调度超时，通常是执行节点负载过高导致。"}
+{"id": "s10", "suite": "static", "question": "E2043 报错怎么处理？", "expected_evidence": ["智云平台故障排查手册#4"], "k_range": [3, 5], "needs_review": true, "must_contain": ["E2043"], "evidence_text": "E2043：对象存储连接失败，检查 access key 与网络连通性。"}
+{"id": "s11", "suite": "static", "question": "平台日志在哪里查看？", "expected_evidence": ["智云平台故障排查手册#2"], "k_range": [3, 5], "evidence_text": "平台运行日志默认输出到 /var/log/zhihui 目录，按天滚动。"}
+{"id": "s12", "suite": "static", "question": "服务启动失败先看什么？", "expected_evidence": ["智云平台故障排查手册#1"], "k_range": [3, 5], "evidence_text": "服务启动失败时先检查配置文件是否完整，再看端口是否被占用。"}
+{"id": "s13", "suite": "static", "question": "科目二倒车入库的评判标准是什么？", "expected_evidence": ["机动车驾驶人科目二考试项目与评判标准#2"], "k_range": [3, 5], "evidence_text": "倒车入库项目车身出线、中途停车超过 2 秒均判定不合格。"}
+{"id": "s14", "suite": "static", "question": "科目二侧方停车有时间限制吗？", "expected_evidence": ["机动车驾驶人科目二考试项目与评判标准#3"], "k_range": [3, 5], "needs_review": true, "must_contain": ["90"], "evidence_text": "侧方停车项目限时 90 秒，超时判定不合格。"}
+{"id": "s15", "suite": "static", "question": "科目二考试有几次机会？", "expected_evidence": ["机动车驾驶人科目二考试项目与评判标准#1"], "k_range": [3, 5], "needs_review": true, "must_contain": ["一次"], "evidence_text": "每个科目考试一次，不合格的可当场补考一次。"}
+{"id": "s16", "suite": "static", "question": "坡道定点停车的扣分项有哪些？", "expected_evidence": ["机动车驾驶人科目二考试项目与评判标准#4"], "k_range": [3, 5], "evidence_text": "坡道定点停车与起步：车身距边线超过 30 厘米扣 10 分，压线不合格。"}
+{"id": "s17", "suite": "static", "question": "文档入库时如果解析失败会怎样？", "expected_evidence": ["企业知识库文档管理规范#7"], "k_range": [3, 5], "evidence_text": "解析失败的文档会标记为「入库失败」，并保留原始文件供重新上传。"}
+{"id": "s18", "suite": "static", "question": "知识库问答的答案会不会标注出处？", "expected_evidence": ["企业知识库文档管理规范#8"], "k_range": [3, 5], "evidence_text": "问答结果需标注引用文档与章节，便于核对原文。"}
+{"id": "s19", "suite": "static", "question": "平台支持多人同时使用吗？", "expected_evidence": ["企业知识库文档管理规范#9"], "k_range": [3, 5], "evidence_text": "平台支持多用户并发访问，单节点建议并发不超过 50。"}
+{"id": "s20", "suite": "static", "question": "文档被误删了能恢复吗？", "expected_evidence": ["企业知识库文档管理规范#5"], "k_range": [3, 5], "needs_review": true, "must_contain": ["重新上传"], "evidence_text": "删除不可撤销，需要重新上传原始文档。"}
