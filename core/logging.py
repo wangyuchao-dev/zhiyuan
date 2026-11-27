@@ -52,7 +52,10 @@ class TextFormatter(logging.Formatter):
         # extra 里的业务字段（method / path / status / duration_ms）必须带上，
         # 否则访问日志只剩一个 "access"，等于白记
         extras = {
-            k: v for k, v in record.__dict__.items() if k not in _RESERVED and not k.startswith("_")
+            k: v
+            for k, v in record.__dict__.items()
+            # color_message 是 uvicorn 自己塞的着色模板（还带 %d 占位符），纯噪音
+            if k not in _RESERVED and k != "color_message" and not k.startswith("_")
         }
         if extras:
             base += "  " + " ".join(f"{k}={v}" for k, v in extras.items())

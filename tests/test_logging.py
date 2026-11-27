@@ -54,6 +54,12 @@ class TestTextFormatter(unittest.TestCase):
         self.assertNotIn("  =", out)
         self.assertTrue(out.endswith("access"))
 
+    def test_uvicorn_color_message_is_filtered(self):
+        """uvicorn 会给日志塞 color_message 模板（带 %d 占位符），不该出现在行尾。"""
+        out = self.fmt.format(_record(color_message="Uvicorn running on %s://%s:%d"))
+        self.assertNotIn("color_message", out)
+        self.assertNotIn("%d", out)
+
 
 class TestJsonFormatter(unittest.TestCase):
     def setUp(self):
