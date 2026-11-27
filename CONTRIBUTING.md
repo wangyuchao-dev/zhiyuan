@@ -104,6 +104,18 @@ powershell -ExecutionPolicy Bypass -File .\scripts\test.ps1    # 测试 + 覆盖
 3. 在 `main` 上打 tag 并推送：`git tag v1.2.0 && git push origin v1.2.0`
 4. tag 触发 `Release` 流水线，构建镜像推到 `ghcr.io/wangyuchao-dev/zhiyuan:<版本>`
 5. 在 `CHANGELOG.md` 顶部补这一版的变更
+6. **发版后把 `main` 合回 `develop` 和 `test`**：
+
+   ```bash
+   git switch develop && git merge origin/main --no-edit && git push
+   git switch test    && git merge origin/main --no-edit && git push
+   ```
+
+   为什么必须做：`main` 上的合并会生成一个 merge commit，这个提交只存在于 `main`。
+   分支保护开着「要求分支是最新的」，下次开 PR 时 `test` 缺这个提交，
+   GitHub 就会卡在 **Required to update** 上，不让你合并。
+   之前踩过一次 —— 一路 `git push origin develop:test` 覆盖过去，
+   merge commit 就永远补不回来。
 
 ## 代码风格
 
