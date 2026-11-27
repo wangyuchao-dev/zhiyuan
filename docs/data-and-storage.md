@@ -24,9 +24,8 @@
 3. **连不上就降级** —— `build_cache()` 连不上 Redis 时自动退化成进程内缓存，接口行为不变，服务照常起。
 
 ```python
-cache = build_cache(settings.redis_url)         # 连不上自动降级，不会起不来
-key = cache.build_key("retr", question, corpus_fp=fp,
-                      params={"k": 5, "min_score": 0.3})
+cache = build_cache(settings.redis_url)  # 连不上自动降级，不会起不来
+key = cache.build_key("retr", question, corpus_fp=fp, params={"k": 5, "min_score": 0.3})
 items, hit = cache.get_or_set(key, lambda: retriever.search(question))
 ```
 
@@ -89,7 +88,7 @@ Milvus 官方对比表里，Milvus 的强项写得很清楚：**多租户靠 par
 ```python
 report = postcheck(answer, evidence)
 if report.action is Severity.BLOCK:
-    answer = report.answer          # 保守话术
+    answer = report.answer  # 保守话术
 ```
 
 ## 四、要不要单独做清洗

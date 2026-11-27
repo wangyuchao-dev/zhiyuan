@@ -1,0 +1,30 @@
+name: 功能建议
+description: 想加的能力或想改的行为
+title: "[Feature] "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: 现在哪里不够用
+      description: 描述真实场景，不要只写「希望支持 xxx」
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: 想法
+      description: 你倾向怎么做；如果有替代方案一并写
+  - type: textarea
+    id: cost
+    attributes:
+      label: 代价
+      description: 会增加什么（延迟 / token / 复杂度），有没有更轻的做法
+  - type: checkboxes
+    id: scope
+    attributes:
+      label: 影响范围
+      options:
+        - label: 需要改检索链路（会影响已入库的向量）
+        - label: 需要改配置或新增环境变量
+        - label: 需要新依赖

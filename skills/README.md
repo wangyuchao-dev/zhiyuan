@@ -27,7 +27,9 @@ keywords: 逗号分隔的关键词
 
 ```python
 from skills.registry import SkillRegistry
-reg = SkillRegistry("skills"); reg.index()
-print(reg.manifest())          # 拼进系统提示词
-print(reg.render("E1017 是什么"))   # 命中才展开正文
+
+reg = SkillRegistry("skills")
+reg.index()
+print(reg.manifest())  # 拼进系统提示词
+print(reg.render("E1017 是什么"))  # 命中才展开正文
 ```

@@ -1,5 +1,11 @@
 # 知渊 · 企业知识库问答
 
+[![CI](https://github.com/wangyuchao-dev/zhiyuan/actions/workflows/ci.yml/badge.svg)](https://github.com/wangyuchao-dev/zhiyuan/actions/workflows/ci.yml)
+![Python](https://img.shields.io/badge/python-3.12-blue)
+![Tests](https://img.shields.io/badge/tests-96-brightgreen)
+![Coverage](https://img.shields.io/badge/coverage-73%25-brightgreen)
+![License](https://img.shields.io/badge/license-MIT-green)
+
 把几十页制度 PDF 变成「问一句话、答案带出处」的知识库。
 核心不是把文档塞进向量库，而是**把检索做准**：意图先分流、双路召回、按名次融合、精排压噪、阈值兜底，每一步的收益都用同一套 34 题评测集量化过。
 
@@ -24,12 +30,12 @@
 | 语义类 | 11/13（85%） | 11/13（85%） | 持平——混合检索不是万灵药 |
 | 典型问答耗时 | 7 s | **2.3 s** | 规则快判意图省一次模型调用 + 无指代词时跳过改写 |
 
-单元测试 **36 个**，`python -m unittest discover -s tests` **不联网、不花钱、不依赖数据库**，0.3 秒跑完。
+单元测试 **96 个**，`pytest` **不联网、不花钱、不依赖数据库**，约 6 秒跑完，覆盖率 73%。
 
 ## 目录
 
 ```
-config/       setting.py（全部可调参数）、prompts.py（6 块提示词）
+config/       setting.py（全部可调参数 + 环境分层）· prompts.py（6 块提示词）· version.py（版本单一来源）
 indexing/     clean（清洗与质量门槛）· hash_calculate（MD5 指纹）· upload_split（PDF 切分）
               parent_child（父子分块）· vector_storage（写 Chroma）· indexing_pipeline
 querying/     query_rewrite · vector_retriever · bm25_retriever · rrf · hybrid_retriever
@@ -38,32 +44,109 @@ agent/        intent（意图）· chat_history_manager · facts_manager · summ
               memory（中枢）· persistence（SQLite）· orchestrator（主流程）
               plan（显式计划 + 有界重试）· memory_policy（四类记忆与严格检索）
 core/         errors（五类错误 + 重试策略）· context_budget（上下文分级预算）
-              cache（Redis 优先，自动降级）· postcheck（后置校验：抓编造）
+              cache（Redis 优先，自动降级）· postcheck（后置校验：抓编造）· logging（结构化日志）
 tools/        registry（function calling 注册表）· mcp_adapter（MCP 描述互转）
 skills/       registry（懒加载）· fault-code-lookup/SKILL.md（示例技能）
 eval/         七维评测框架（见下方「评测」）
-api/          main（装配）· deps（懒加载）· schemas · routes/chat · routes/documents
-tests/        test_core（36 用例）· test_ingestion（入库冒烟）
+api/          main（装配）· deps（懒加载）· middleware（请求 ID）· schemas
+              routes/ops（health / ready / version）· routes/chat · routes/documents
+tests/        test_core · test_ingestion · test_agent_infra · test_data_pipeline（共 96 例）
 web/          index.html（Vue 3 单页）
+scripts/      check.ps1（与 CI 同款）· lint.ps1 · test.ps1
+.github/      workflows/ci.yml · workflows/release.yml · PR 与 Issue 模板
 ```
 
 ## 快速开始
 
+```powershell
+# 1. 环境
+uv venv --python 3.12 .venv
+uv pip install --python .venv\Scripts\python.exe -r requirements-dev.txt
+
+# 2. 配置密钥（.env 已被 .gitignore 忽略）
+copy .env.example .env      # 然后填入 DASHSCOPE_API_KEY
+
+# 3. 起服务：双击 start.bat，或
+.\start.bat                 # http://127.0.0.1:8000（前端与接口同端口）
+```
+
+也可以容器起（自带健康检查与数据卷）：
+
 ```bash
-python -m venv .venv && .venv\Scripts\activate      # Windows
-pip install -r requirements.txt
-
-set DASHSCOPE_API_KEY=sk-xxx                        # 对话 / embedding / 精排都走 DashScope
-python api/main.py                                  # http://127.0.0.1:8000  （文档 /docs）
-
-# 另开一个窗口起前端
-python -m http.server 8080 --directory web          # http://127.0.0.1:8080
+docker compose up -d --build
 ```
 
 传一份 PDF 到 `uploads/`（或走 `POST /api/documents` 上传），系统会切分、向量化、写入 `indexing/chroma_db/`。
-首次没有向量库也能起服务，`/api/health` 会告诉你缺什么。
+首次没有向量库也能起服务：`/api/health` 只看进程活着，`/api/ready` 会逐项告诉你缺什么（密钥 / 向量库 / 运行目录）。
 
 > 仓库未附带知识库 PDF 与向量库（`.gitignore` 已排除），放任意 PDF 到 `uploads/` 即可复现。
+
+## 工程化
+
+一个人开发也按团队流程走 —— 不是流程本身重要，而是**任何一次上线都能回答「这个版本在 test 上验过吗」**。
+
+### 分支模型
+
+```
+feature/xxx ──┐
+              ├─> develop ──> test ──> main
+hotfix/xxx ───┘         (CI)     (CI)    (CI + 打 tag 出镜像)
+```
+
+| 分支 | 用途 | 规则 |
+|---|---|---|
+| `main` | 生产，随时可发版 | 只接受来自 `test` 的 PR，禁止直推 |
+| `test` | 验收环境 | 只接受来自 `develop` 的 PR |
+| `develop` | 日常开发主线 | 功能分支从这里切、合回这里 |
+| `feature/*` / `hotfix/*` | 单功能 / 线上急修 | hotfix 修完要同时回合并 `main` 与 `develop` |
+
+提交信息用 Conventional Commits（`feat` / `fix` / `refactor` / `docs` / `ci` …），正文写**为什么**。
+细节见 [CONTRIBUTING.md](CONTRIBUTING.md)。
+
+### CI 与质量门槛
+
+`.github/workflows/ci.yml` 在 PR 与三个主分支上跑四个任务：
+
+| 任务 | 内容 | 不过会怎样 |
+|---|---|---|
+| `quality` | `ruff check` + `ruff format --check` | 挡住不合规的代码进主干 |
+| `test` | `pytest --cov`，**覆盖率门槛 65%**（当前 73%） | 挡住「新加一堆没测的代码」 |
+| `docker` | 镜像可构建 | 挡住「本地能跑、镜像起不来」 |
+
+依赖 `quality` 通过才构建镜像 —— 镜像构建慢，没必要给不合规的代码排队。
+
+测试**全部离线**：不调模型、不连数据库、不需要 API Key。哪天某个测试开始依赖外部服务，CI 上会立刻暴露。
+
+### 本地与 CI 同款
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\check.ps1
+```
+
+三条命令：`ruff check` → `ruff format --check` → `pytest --cov`。提交前跑一次，就不会出现「推上去才发现红」。
+装了 `pre-commit` 之后，commit 时也会自动跑 ruff 与 `detect-private-key`（拦 API Key、私钥）。
+
+### 环境分层
+
+`APP_ENV` 取 `development` / `test` / `production`：
+
+| 环境 | 日志 | 用途 |
+|---|---|---|
+| `development` | 可读文本，带 request_id 前 8 位 | 本地调试 |
+| `test` | 同开发 | 验收环境 |
+| `production` | **JSON 一行一条**，带 request_id | 接 Loki / ELK 采集 |
+
+敏感值只从环境变量读，代码里没有任何默认 Key。`QaConfig.load()` 支持 `CHAT_MODEL`、`MIN_SCORE` 等覆盖，方便按环境切便宜模型或临时调阈值。
+
+### 运维端点
+
+| 端点 | 回答什么问题 | 依赖挂了会怎样 |
+|---|---|---|
+| `/api/health` | 进程还活着吗 | **仍返回 200** —— 否则编排系统会反复重启一个没坏的进程 |
+| `/api/ready` | 现在能接流量吗 | 返回 503，让负载均衡先把流量摘走 |
+| `/api/version` | 跑的是哪个版本 | — |
+
+`/api/ready` 只检查必要条件（Key 是否配、向量库目录是否在），**不真的调一次模型** —— 它会被每几秒打一次，调模型既费钱又会被限流。
 
 ## 四个我认为值得说的设计
 
