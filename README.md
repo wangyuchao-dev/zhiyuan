@@ -30,13 +30,15 @@
 
 ```
 config/       setting.py（全部可调参数）、prompts.py（6 块提示词）
-indexing/     hash_calculate（MD5 指纹）· upload_split（PDF 切分）· vector_storage（写 Chroma）· indexing_pipeline
+indexing/     clean（清洗与质量门槛）· hash_calculate（MD5 指纹）· upload_split（PDF 切分）
+              parent_child（父子分块）· vector_storage（写 Chroma）· indexing_pipeline
 querying/     query_rewrite · vector_retriever · bm25_retriever · rrf · hybrid_retriever
               retrank（精排）· answer（生成）· pipeline（串联）· eval_retrieval / eval_single_doc（评测）
 agent/        intent（意图）· chat_history_manager · facts_manager · summary_manager
               memory（中枢）· persistence（SQLite）· orchestrator（主流程）
               plan（显式计划 + 有界重试）· memory_policy（四类记忆与严格检索）
 core/         errors（五类错误 + 重试策略）· context_budget（上下文分级预算）
+              cache（Redis 优先，自动降级）· postcheck（后置校验：抓编造）
 tools/        registry（function calling 注册表）· mcp_adapter（MCP 描述互转）
 skills/       registry（懒加载）· fault-code-lookup/SKILL.md（示例技能）
 eval/         七维评测框架（见下方「评测」）
@@ -127,4 +129,5 @@ python eval/report.py eval/results/a.json eval/results/b.json > report.md       
 |---|---|
 | [docs/agent-design.md](docs/agent-design.md) | 十个绕不开的设计问题：ReAct/Plan、Agent/Workflow、工具失败、多 Agent、MCP 与 Function Calling、记忆、召回、MCP/SKILL、评估、上下文 |
 | [docs/eval-framework.md](docs/eval-framework.md) | 七维评测的口径与局限，以及「表面对」为什么会骗人 |
+| [docs/data-and-storage.md](docs/data-and-storage.md) | 四个判断：要不要加 Redis、要不要换 Milvus、要不要做后置覆盖、要不要单独清洗（含 68 万字压测数据） |
 | [eval/README.md](eval/README.md) | 评测框架怎么跑、用例怎么写 |
