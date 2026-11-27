@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 单文档三题验证：跑真实链路（召回 → 精排 → 阈值过滤），把每一题的分数打出来。
 
@@ -16,6 +15,7 @@
 
 需要环境变量 DASHSCOPE_API_KEY（向量模型与精排模型都要调用）。
 """
+
 import argparse
 import os
 import sys
@@ -52,20 +52,23 @@ def main() -> None:
 
     cfg = QaConfig()
     print(f"文档：{args.pdf}")
-    print(f"阈值 min_score = {cfg.min_score}　召回 recall_k = {args.recall_k}　保留 top_k = {args.top_k}")
+    print(
+        f"阈值 min_score = {cfg.min_score}　召回 recall_k = {args.recall_k}　保留 top_k = {args.top_k}"
+    )
     print("-" * 78)
 
     emb = DashScopeEmbeddings(model=cfg.embedding_model)
     file_hash = HashCalculate().compute_hash_from_file(args.pdf)
-    vs = VectorStoreManager(cfg, emb).load_or_build(file_hash)   # 已入库会直接复用
+    vs = VectorStoreManager(cfg, emb).load_or_build(file_hash)  # 已入库会直接复用
     hybrid = HybridRetriever(vs, cfg)
     rerank = RerankPipeline(cfg)
 
     rows = []
     for question, has_answer in QUESTIONS:
         recalled = hybrid.retrieve(question, k=args.recall_k)
-        evidence, context = rerank.rerank(query=question, recalled_docs=recalled,
-                                          final_top_n=args.top_k)
+        evidence, context = rerank.rerank(
+            query=question, recalled_docs=recalled, final_top_n=args.top_k
+        )
         top = evidence[0].score if evidence else 0.0
         scores = "、".join(f"{e.score:.4f}" for e in evidence) or "（全部被阈值滤掉）"
         rows.append((question, has_answer, len(recalled), top, len(evidence), scores))
@@ -78,12 +81,16 @@ def main() -> None:
 
     print("=" * 78)
     print("可直接写进产品说明的结论：")
-    for question, has_answer, n_recall, top, n_keep, _ in rows:
+    for question, has_answer, _n_recall, top, n_keep, _ in rows:
         if has_answer == "无" and n_keep > 0:
-            print(f"  · 「{question}」文档里没有，但精排最高分 {top:.4f} 仍高于阈值 "
-                  f"{cfg.min_score}，未被滤掉 —— 说明 0.3 对这个库偏松，0.4 更合适。")
+            print(
+                f"  · 「{question}」文档里没有，但精排最高分 {top:.4f} 仍高于阈值 "
+                f"{cfg.min_score}，未被滤掉 —— 说明 0.3 对这个库偏松，0.4 更合适。"
+            )
         elif has_answer == "无" and n_keep == 0:
-            print(f"  · 「{question}」文档里没有，已被阈值滤掉（最高分 {top:.4f}）—— 0.3 生效且够严。")
+            print(
+                f"  · 「{question}」文档里没有，已被阈值滤掉（最高分 {top:.4f}）—— 0.3 生效且够严。"
+            )
     print("  注：分数会随模型版本与索引内容变化，写进文档时注明测量日期。")
 
 

@@ -6,11 +6,13 @@
 原则：**先减少「带什么」，再考虑「压多短」**。摘要最贵（一次额外调用、且不可逆），
       放在最后才用。
 """
+
 from __future__ import annotations
 
 import re
+from collections.abc import Sequence
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from typing import Any
 
 _CJK = re.compile(r"[\u4e00-\u9fa5]")
 _WORD = re.compile(r"[A-Za-z0-9_]+")
@@ -29,7 +31,7 @@ def estimate_tokens(text: str) -> int:
     return int(cjk + words * 1.3 + others * 0.5)
 
 
-def truncate_to_tokens(text: str, budget: int) -> Tuple[str, bool]:
+def truncate_to_tokens(text: str, budget: int) -> tuple[str, bool]:
     """按预算截断，尽量在句号处断开，避免切出半句话。"""
     if budget <= 0:
         return "", bool(text)
@@ -46,27 +48,28 @@ def truncate_to_tokens(text: str, budget: int) -> Tuple[str, bool]:
     cut = "".join(out)
     for sep in ("。", "；", "！", "？", "\n"):
         pos = cut.rfind(sep)
-        if pos >= max(1, int(len(cut) * 0.3)):          # 断开点不能太靠前，否则丢太多
-            cut = cut[:pos + 1]
+        if pos >= max(1, int(len(cut) * 0.3)):  # 断开点不能太靠前，否则丢太多
+            cut = cut[: pos + 1]
             break
     return cut, True
 
 
 @dataclass
 class PackedContext:
-    facts: List[str] = field(default_factory=list)
-    evidence: List[str] = field(default_factory=list)
-    history: List[str] = field(default_factory=list)
+    facts: list[str] = field(default_factory=list)
+    evidence: list[str] = field(default_factory=list)
+    history: list[str] = field(default_factory=list)
     used_tokens: int = 0
-    stats: Dict[str, Any] = field(default_factory=dict)
+    stats: dict[str, Any] = field(default_factory=dict)
 
     def as_text(self) -> str:
         parts = []
         if self.facts:
             parts.append("【已知事实】\n" + "\n".join(f"- {f}" for f in self.facts))
         if self.evidence:
-            parts.append("【参考资料】\n" + "\n\n".join(
-                f"[{i}] {e}" for i, e in enumerate(self.evidence, 1)))
+            parts.append(
+                "【参考资料】\n" + "\n\n".join(f"[{i}] {e}" for i, e in enumerate(self.evidence, 1))
+            )
         if self.history:
             parts.append("【对话记录】\n" + "\n".join(self.history))
         return "\n\n".join(parts)
@@ -80,27 +83,32 @@ class ContextPacker:
     否则「答案变差了」永远查不出是上下文被裁了。
     """
 
-    def __init__(self, total_budget: int = 3000, evidence_item_budget: int = 600,
-                 history_item_budget: int = 300, fact_budget: int = 120) -> None:
+    def __init__(
+        self,
+        total_budget: int = 3000,
+        evidence_item_budget: int = 600,
+        history_item_budget: int = 300,
+        fact_budget: int = 120,
+    ) -> None:
         self.total_budget = total_budget
         self.evidence_item_budget = evidence_item_budget
         self.history_item_budget = history_item_budget
         self.fact_budget = fact_budget
-        self._facts: List[str] = []
-        self._evidence: List[Tuple[float, str]] = []
-        self._history: List[str] = []
+        self._facts: list[str] = []
+        self._evidence: list[tuple[float, str]] = []
+        self._history: list[str] = []
 
     # ---- 装填 ----
-    def add_facts(self, facts: Sequence[str]) -> "ContextPacker":
+    def add_facts(self, facts: Sequence[str]) -> ContextPacker:
         self._facts.extend(f for f in facts if f)
         return self
 
-    def add_evidence(self, items: Sequence[Tuple[float, str]]) -> "ContextPacker":
+    def add_evidence(self, items: Sequence[tuple[float, str]]) -> ContextPacker:
         """items = [(score, text)]，分数越高越先装。"""
         self._evidence.extend(items)
         return self
 
-    def add_history(self, turns: Sequence[str]) -> "ContextPacker":
+    def add_history(self, turns: Sequence[str]) -> ContextPacker:
         """turns 按时间正序传入，内部反转为「从新到旧」装填。"""
         self._history.extend(reversed([t for t in turns if t]))
         return self
@@ -125,7 +133,7 @@ class ContextPacker:
             truncated_facts += int(cut)
 
         # 2) 证据：按分数降序，单条截断，装不下就停（宁可少一条，不塞残句）
-        for score, text in sorted(self._evidence, key=lambda x: -x[0]):
+        for _score, text in sorted(self._evidence, key=lambda x: -x[0]):
             text, cut = truncate_to_tokens(text, self.evidence_item_budget)
             cost = estimate_tokens(text)
             if cost > left:
@@ -146,7 +154,7 @@ class ContextPacker:
             left -= cost
             truncated_hist += int(cut)
 
-        out.history.reverse()               # 还原成时间正序，模型读着顺
+        out.history.reverse()  # 还原成时间正序，模型读着顺
         out.used_tokens = self.total_budget - left
         out.stats = {
             "budget": self.total_budget,
@@ -159,7 +167,9 @@ class ContextPacker:
             "history_dropped": dropped_hist,
             "history_truncated": truncated_hist,
             "facts_truncated": truncated_facts,
-            "utilization": round(out.used_tokens / self.total_budget, 3) if self.total_budget else 0.0,
+            "utilization": round(out.used_tokens / self.total_budget, 3)
+            if self.total_budget
+            else 0.0,
         }
         return out
 

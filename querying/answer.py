@@ -1,35 +1,37 @@
 """答案生成器：按 ANSWER_PROMPT 约束，只依据上下文作答并标注引用编号。
 
 提供 generate()（一次性）与 stream()（流式）两条路径，入参结构共用 _payload()。"""
+
 import os
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
-
-from typing import List
-
 from langchain_community.chat_models import ChatTongyi
 from langchain_core.messages import BaseMessage
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
+
 from config.prompts import ANSWER_PROMPT
 
 # 职责：基于检索到的上下文，生成最终答案（带引用标注）
+
 
 class AnswerGenerator:
     """答案生成器：根据问题、对话历史、检索上下文生成答案"""
 
     def __init__(self, llm: ChatTongyi):
-        prompt = ChatPromptTemplate.from_messages([
-            ("system", ANSWER_PROMPT),
-            MessagesPlaceholder("chat_history"),
-            ("human", "{input}"),
-        ])
+        prompt = ChatPromptTemplate.from_messages(
+            [
+                ("system", ANSWER_PROMPT),
+                MessagesPlaceholder("chat_history"),
+                ("human", "{input}"),
+            ]
+        )
         self.__llm = prompt | llm | StrOutputParser()
 
-    def generate(self, question: str, chat_history: List[BaseMessage], context: str) -> str:
+    def generate(self, question: str, chat_history: list[BaseMessage], context: str) -> str:
         """
         生成答案（一次性返回）
         :param question: 用户原始问题
@@ -39,7 +41,7 @@ class AnswerGenerator:
         """
         return self.__llm.invoke(self._payload(question, chat_history, context))
 
-    def stream(self, question: str, chat_history: List[BaseMessage], context: str):
+    def stream(self, question: str, chat_history: list[BaseMessage], context: str):
         """
         流式生成答案（逐 token 产出），供 SSE 接口使用。
 
@@ -51,7 +53,7 @@ class AnswerGenerator:
                 yield chunk
 
     @staticmethod
-    def _payload(question: str, chat_history: List[BaseMessage], context: str) -> dict:
+    def _payload(question: str, chat_history: list[BaseMessage], context: str) -> dict:
         """一次性 / 流式两条路径共用的入参，避免两处写不一样的 key"""
         return {
             "input": question,

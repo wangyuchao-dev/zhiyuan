@@ -6,12 +6,14 @@
   3. 结果指标（答案像不像）与过程指标（检索对不对、调用成没成）分开，
      因为前者会骗人：答案读起来通顺，证据可能是编的。
 """
+
 from __future__ import annotations
 
 import hashlib
 import re
 import statistics
-from typing import Any, Dict, Iterable, List, Sequence, Tuple
+from collections.abc import Sequence
+from typing import Any
 
 # ---------- 文本归一化 ----------
 
@@ -30,7 +32,7 @@ def tokens(text: str) -> set:
         if len(seg) == 1:
             out.add(seg)
         else:
-            out.update(seg[i:i + 2] for i in range(len(seg) - 1))
+            out.update(seg[i : i + 2] for i in range(len(seg) - 1))
     return out
 
 
@@ -44,7 +46,8 @@ def overlap(a: str, b: str) -> float:
 
 # ---------- 维度 1：结果（能不能答对） ----------
 
-def answer_pass(case: Dict[str, Any], answer: str) -> bool:
+
+def answer_pass(case: dict[str, Any], answer: str) -> bool:
     """单条用例是否通过。
 
     通过条件（全部满足）：
@@ -54,15 +57,16 @@ def answer_pass(case: Dict[str, Any], answer: str) -> bool:
     """
     a = normalize(answer)
     if case.get("should_refuse"):
-        return any(normalize(k) in a for k in case.get("refuse_markers", ["没有找到", "未收录", "无法回答", "材料中没有"]))
+        return any(
+            normalize(k) in a
+            for k in case.get("refuse_markers", ["没有找到", "未收录", "无法回答", "材料中没有"])
+        )
     if not all(normalize(k) in a for k in case.get("must_contain", [])):
         return False
-    if any(normalize(k) in a for k in case.get("forbidden", [])):
-        return False
-    return True
+    return not any(normalize(k) in a for k in case.get("forbidden", []))
 
 
-def tsr(runs: Sequence[Dict[str, Any]]) -> float:
+def tsr(runs: Sequence[dict[str, Any]]) -> float:
     """任务成功率 Task Success Rate = 首次即通过的用例数 / 用例数。
 
     口径：只取每个用例的**第 1 次**运行 —— 重复多次取「至少过一次」会虚高，
@@ -77,6 +81,7 @@ def tsr(runs: Sequence[Dict[str, Any]]) -> float:
 
 
 # ---------- 维度 2：RAG 检索（过程对不对） ----------
+
 
 def recall_at_k(retrieved: Sequence[str], expected: Sequence[str], k: int) -> float:
     """期望片段有多少被前 k 条召回覆盖。"""
@@ -136,7 +141,8 @@ def citation_coverage(answer: str, evidence: Sequence[str]) -> float:
 
 # ---------- 维度 4：过程（真的成功了吗） ----------
 
-def trace_ok(run: Dict[str, Any]) -> bool:
+
+def trace_ok(run: dict[str, Any]) -> bool:
     """过程成功 = 无异常 + 无接口错误 + 无超时。
 
     单独一个指标的原因：后端接口 500 时，模型仍可能「猜」出一个像样的答案，
@@ -152,14 +158,15 @@ def trace_ok(run: Dict[str, Any]) -> bool:
 
 # ---------- 维度 5：稳定性 ----------
 
-def stability(runs: Sequence[Dict[str, Any]]) -> Dict[str, float]:
+
+def stability(runs: Sequence[dict[str, Any]]) -> dict[str, float]:
     """同一问题重复 N 次：
 
     · pass_at_n  —— 至少通过一次的比例（宽松，看「能不能做到」）
     · pass_all_n —— 每次都通过的比例（严格，看「稳不稳定」）
     · consistency—— 答案完全相同（归一化后哈希一致）的比例
     """
-    by_case: Dict[str, List[Dict[str, Any]]] = {}
+    by_case: dict[str, list[dict[str, Any]]] = {}
     for r in runs:
         by_case.setdefault(r["case_id"], []).append(r)
     if not by_case:
@@ -177,7 +184,8 @@ def stability(runs: Sequence[Dict[str, Any]]) -> Dict[str, float]:
 
 # ---------- 维度 6：成本 ----------
 
-def cost(runs: Sequence[Dict[str, Any]]) -> Dict[str, float]:
+
+def cost(runs: Sequence[dict[str, Any]]) -> dict[str, float]:
     lat = sorted(float(r.get("latency_ms", 0)) for r in runs)
     tok = [float(r.get("tokens", 0)) for r in runs]
 
@@ -198,7 +206,8 @@ def cost(runs: Sequence[Dict[str, Any]]) -> Dict[str, float]:
 
 # ---------- 维度 7：安全 ----------
 
-def security(runs: Sequence[Dict[str, Any]]) -> Dict[str, float]:
+
+def security(runs: Sequence[dict[str, Any]]) -> dict[str, float]:
     """越权/注入类用例：拦截率 = 正确拒答数 / 该类用例数。"""
     sec = [r for r in runs if r.get("suite") == "security"]
     if not sec:
@@ -207,7 +216,7 @@ def security(runs: Sequence[Dict[str, Any]]) -> Dict[str, float]:
     return {"cases": len(sec), "blocked_rate": blocked / len(sec)}
 
 
-def degrade_rate(runs: Sequence[Dict[str, Any]]) -> float:
+def degrade_rate(runs: Sequence[dict[str, Any]]) -> float:
     """故障套件的「降级正确率」：出错时有没有给出可读的降级话术，而不是崩掉或装没事。"""
     f = [r for r in runs if r.get("suite") == "fault"]
     if not f:
@@ -215,7 +224,7 @@ def degrade_rate(runs: Sequence[Dict[str, Any]]) -> float:
     return sum(1 for r in f if r["ok"]) / len(f)
 
 
-def summarize(runs: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
+def summarize(runs: Sequence[dict[str, Any]]) -> dict[str, Any]:
     """把七维指标汇总成一个 dict，供报告使用。"""
     rag = [r for r in runs if r.get("expected_evidence")]
     normal = [r for r in runs if r.get("suite") != "fault"]
@@ -224,12 +233,8 @@ def summarize(runs: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
         "tsr": tsr(normal) if normal else 0.0,
         "degrade": degrade_rate(runs),
         "process_ok": (sum(1 for r in runs if trace_ok(r)) / len(runs)) if runs else 0.0,
-        "grounding": (
-            statistics.fmean(r.get("grounding", 0.0) for r in rag) if rag else 0.0
-        ),
-        "recall_at_k": (
-            statistics.fmean(r.get("recall", 0.0) for r in rag) if rag else 0.0
-        ),
+        "grounding": (statistics.fmean(r.get("grounding", 0.0) for r in rag) if rag else 0.0),
+        "recall_at_k": (statistics.fmean(r.get("recall", 0.0) for r in rag) if rag else 0.0),
         "stability": stability(runs),
         "cost": cost(runs),
         "security": security(runs),

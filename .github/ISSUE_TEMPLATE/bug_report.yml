@@ -1,0 +1,51 @@
+name: Bug 报告
+description: 功能不对、报错、结果异常
+title: "[Bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        提交前先确认：`scripts/check.ps1` 是否通过、`/api/ready` 是否 ready。
+        **不要在 issue 里贴 API Key 或内网地址**。
+  - type: textarea
+    id: what
+    attributes:
+      label: 现象
+      description: 期望发生什么、实际发生了什么
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: 复现步骤
+      placeholder: |
+        1. 上传 xxx.pdf
+        2. 提问「……」
+        3. 返回……
+    validations:
+      required: true
+  - type: dropdown
+    id: route
+    attributes:
+      label: 涉及环节
+      multiple: true
+      options:
+        - 文档入库（切分 / 清洗 / 向量化）
+        - 检索（召回 / 融合 / 精排）
+        - 生成（答案 / 引用）
+        - 记忆（多轮 / 事实）
+        - 接口 / 前端
+        - 部署 / 环境
+  - type: input
+    id: version
+    attributes:
+      label: 版本
+      description: 见 `/api/version`
+      placeholder: "1.2.0"
+  - type: textarea
+    id: logs
+    attributes:
+      label: 日志
+      description: 服务端日志（已去掉 Key 与敏感内容）；有 X-Request-ID 最好一并贴上
+      render: text

@@ -9,9 +9,11 @@
 本模块只做「描述层」的互转，不实现传输（stdio / streamable-http 由 SDK 负责）。
 这样换传输方式不用改这里，换模型也不用改 MCP server。
 """
+
 from __future__ import annotations
 
-from typing import Any, Dict, Iterable, List, Sequence
+from collections.abc import Iterable, Sequence
+from typing import Any
 
 try:
     from tools.registry import ToolSpec
@@ -19,13 +21,13 @@ except ImportError:  # pragma: no cover
     from .registry import ToolSpec  # type: ignore
 
 
-def from_mcp_tools(mcp_tools: Iterable[Dict[str, Any]]) -> List[ToolSpec]:
+def from_mcp_tools(mcp_tools: Iterable[dict[str, Any]]) -> list[ToolSpec]:
     """MCP 的 tools/list 结果 → 本地 ToolSpec 列表。
 
     MCP 的字段是 name / description / inputSchema，与 function calling 的
     name / description / parameters 一一对应，所以只是改名 + 兜底。
     """
-    specs: List[ToolSpec] = []
+    specs: list[ToolSpec] = []
     for t in mcp_tools:
         name = (t.get("name") or "").strip()
         if not name:
@@ -33,25 +35,31 @@ def from_mcp_tools(mcp_tools: Iterable[Dict[str, Any]]) -> List[ToolSpec]:
         schema = t.get("inputSchema") or t.get("parameters") or {"type": "object", "properties": {}}
         if "type" not in schema:
             schema = {"type": "object", "properties": schema}
-        specs.append(ToolSpec(
-            name=name,
-            description=(t.get("description") or name)[:200],
-            parameters=schema,
-            handler=None,          # 远程工具的执行交给 MCP client，本地不持有实现
-            read_only=bool(t.get("annotations", {}).get("readOnlyHint", True)),
-        ))
+        specs.append(
+            ToolSpec(
+                name=name,
+                description=(t.get("description") or name)[:200],
+                parameters=schema,
+                handler=None,  # 远程工具的执行交给 MCP client，本地不持有实现
+                read_only=bool(t.get("annotations", {}).get("readOnlyHint", True)),
+            )
+        )
     return specs
 
 
-def to_mcp_tools(specs: Sequence[ToolSpec]) -> List[Dict[str, Any]]:
+def to_mcp_tools(specs: Sequence[ToolSpec]) -> list[dict[str, Any]]:
     """本地 ToolSpec → MCP 描述（用于把自家工具挂到 MCP server 上给别人用）。"""
-    return [{"name": s.name,
-             "description": s.description,
-             "inputSchema": s.parameters} for s in specs]
+    return [
+        {"name": s.name, "description": s.description, "inputSchema": s.parameters} for s in specs
+    ]
 
 
-def filter_tools(specs: Sequence[ToolSpec], allow_prefix: Sequence[str] = (),
-                 deny_prefix: Sequence[str] = (), max_tools: int = 12) -> List[ToolSpec]:
+def filter_tools(
+    specs: Sequence[ToolSpec],
+    allow_prefix: Sequence[str] = (),
+    deny_prefix: Sequence[str] = (),
+    max_tools: int = 12,
+) -> list[ToolSpec]:
     """按前缀筛选并截断数量。
 
     为什么必须截断：工具描述会占用上下文，十几个工具就吃掉上千 token，

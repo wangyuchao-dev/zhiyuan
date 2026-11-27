@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 知渊核心逻辑回归测试（标准库 unittest，不需要 pytest，不联网、不调大模型）
 
@@ -14,6 +13,7 @@
 或：
   D:\\Anaconda3\\envs\\langchain\\python.exe tests\\test_core.py
 """
+
 import os
 import shutil
 import sys
@@ -41,12 +41,14 @@ class DbIsolated(unittest.TestCase):
 
     def setUp(self):
         import agent.persistence as p
+
         self._tmpdir = tempfile.mkdtemp()
         self._db = p.set_db_path(os.path.join(self._tmpdir, "memory.db"))
 
     def tearDown(self):
         import agent.persistence as p
-        p.set_db_path(None)          # 复位到默认路径，避免影响别的用例
+
+        p.set_db_path(None)  # 复位到默认路径，避免影响别的用例
         shutil.rmtree(self._tmpdir, ignore_errors=True)
 
 
@@ -58,6 +60,7 @@ class TestRRF(unittest.TestCase):
 
     def test_same_chunk_merged_across_two_lists(self):
         from querying.rrf import rrf_scores
+
         d1 = _doc("年假五天", page=0)
         d2 = _doc("请假需提前三个工作日", page=1)
         pairs = rrf_scores([[d1, d2], [d2, d1]], k=60, weights=[0.7, 0.3])
@@ -66,6 +69,7 @@ class TestRRF(unittest.TestCase):
     def test_identical_text_different_page_not_merged(self):
         """修复点：以前用 page_content 当 key，会把不同页的同文片段吞掉"""
         from querying.rrf import rrf_scores
+
         a = _doc("本页无正文", page=0)
         b = _doc("本页无正文", page=5)
         pairs = rrf_scores([[a], [b]], k=60, weights=[0.7, 0.3])
@@ -73,6 +77,7 @@ class TestRRF(unittest.TestCase):
 
     def test_weights_change_ranking(self):
         from querying.rrf import rrf_scores
+
         x = _doc("X", page=0)
         y = _doc("Y", page=0)
         pairs = rrf_scores([[x, y], [y, x]], k=60, weights=[0.7, 0.3])
@@ -82,6 +87,7 @@ class TestRRF(unittest.TestCase):
 
     def test_empty_input(self):
         from querying.rrf import rrf_fuse, rrf_scores
+
         self.assertEqual(rrf_fuse([]), [])
         self.assertEqual(rrf_scores([]), [])
 
@@ -94,6 +100,7 @@ class TestMemory(DbIsolated):
 
     def _mem(self, sid):
         from agent.memory import Memory
+
         return Memory(sid)
 
     def test_three_layer_order(self):
@@ -114,7 +121,8 @@ class TestMemory(DbIsolated):
     def test_context_uses_system_message_not_ai(self):
         """修复点：摘要/事实以前用 AIMessage，语义是「AI 说过的话」，
         会让模型把系统注入当成自己的发言，并出现连续三条 ai。"""
-        from langchain_core.messages import SystemMessage, AIMessage
+        from langchain_core.messages import AIMessage, SystemMessage
+
         m = self._mem("t-role")
         m.add_user("年假有几天", None)
         m.add_ai("年假五天", None)
@@ -125,11 +133,12 @@ class TestMemory(DbIsolated):
 
         # 最后一条必须是 SystemMessage，且只有一条
         self.assertIsInstance(ctx[-1], SystemMessage)
-        self.assertEqual(sum(isinstance(x, SystemMessage) for x in ctx), 1,
-                         "只能有一条 SystemMessage")
+        self.assertEqual(
+            sum(isinstance(x, SystemMessage) for x in ctx), 1, "只能有一条 SystemMessage"
+        )
         # 正常消息里不能出现连续两条 AI
         normal = [x for x in ctx if not isinstance(x, SystemMessage)]
-        for a, b in zip(normal, normal[1:]):
+        for a, b in zip(normal, normal[1:], strict=False):
             self.assertFalse(
                 isinstance(a, AIMessage) and isinstance(b, AIMessage),
                 "出现连续两条 AIMessage，对话结构被破坏",
@@ -174,7 +183,7 @@ class TestMemory(DbIsolated):
             for i in range(9):
                 m.add_user("q%d" % i, None)
             self.assertEqual(calls["n"], 0, "没到阈值不该压摘要")
-            m.add_ai("第10条", None)          # 第 10 条触发
+            m.add_ai("第10条", None)  # 第 10 条触发
             self.assertEqual(calls["n"], 1, "到阈值必须压一次")
 
         self.assertEqual(m.summary.get(), "摘要1", "摘要要落到模块级 store")
@@ -195,28 +204,36 @@ class TestRerank(unittest.TestCase):
     def _pipe(self):
         from config.setting import QaConfig
         from querying.retrank import RerankPipeline
+
         return RerankPipeline(QaConfig())
 
     def _docs(self, n=3):
-        return [Document(page_content=("内容%d" % i) * 30,
-                         metadata={"source": "a.pdf", "page": i}) for i in range(n)]
+        return [
+            Document(page_content=("内容%d" % i) * 30, metadata={"source": "a.pdf", "page": i})
+            for i in range(n)
+        ]
 
     @staticmethod
     def _resp(scores):
         class Resp:
             output = {"results": scores}
+
         return Resp()
 
     def test_below_min_score_dropped(self):
         """修复点：0.3 阈值以前定义了但从未生效"""
         import dashscope
+
         pipe = self._pipe()
         docs = self._docs(3)
-        scores = [{"index": 0, "relevance_score": 0.9},
-                  {"index": 1, "relevance_score": 0.338},
-                  {"index": 2, "relevance_score": 0.1}]
-        with patch.object(dashscope.TextReRank, "call",
-                          staticmethod(lambda **kw: self._resp(scores))):
+        scores = [
+            {"index": 0, "relevance_score": 0.9},
+            {"index": 1, "relevance_score": 0.338},
+            {"index": 2, "relevance_score": 0.1},
+        ]
+        with patch.object(
+            dashscope.TextReRank, "call", staticmethod(lambda **kw: self._resp(scores))
+        ):
             ev, ctx = pipe.rerank("q", docs, final_top_n=3)
         self.assertEqual(len(ev), 2, "0.1 低于阈值必须被丢弃")
         self.assertNotIn(0.1, [e.score for e in ev])
@@ -224,18 +241,20 @@ class TestRerank(unittest.TestCase):
 
     def test_all_below_threshold_returns_empty(self):
         import dashscope
+
         pipe = self._pipe()
         docs = self._docs(2)
-        scores = [{"index": 0, "relevance_score": 0.05},
-                  {"index": 1, "relevance_score": 0.08}]
-        with patch.object(dashscope.TextReRank, "call",
-                          staticmethod(lambda **kw: self._resp(scores))):
+        scores = [{"index": 0, "relevance_score": 0.05}, {"index": 1, "relevance_score": 0.08}]
+        with patch.object(
+            dashscope.TextReRank, "call", staticmethod(lambda **kw: self._resp(scores))
+        ):
             ev, ctx = pipe.rerank("q", docs, final_top_n=3)
         self.assertEqual(ev, [])
         self.assertEqual(ctx, "", "全部不合格时应返回空，让上层说未找到")
 
     def test_empty_recall_skips_rerank_api(self):
         import dashscope
+
         pipe = self._pipe()
         calls = {"n": 0}
 
@@ -250,6 +269,7 @@ class TestRerank(unittest.TestCase):
 
     def test_rerank_exception_degrades(self):
         import dashscope
+
         pipe = self._pipe()
         docs = self._docs(3)
 
@@ -279,7 +299,8 @@ class TestIntentRules(unittest.TestCase):
     @staticmethod
     def _agent():
         from agent.orchestrator import Agent
-        return object.__new__(Agent)      # 跳过 __init__，只用类级规则
+
+        return object.__new__(Agent)  # 跳过 __init__，只用类级规则
 
     def test_chitchat(self):
         self.assertEqual(self._agent()._quick_intent("你好"), "chitchat")
@@ -332,7 +353,7 @@ class TestVectorStore(unittest.TestCase):
                 _collection = types.SimpleNamespace(count=lambda: 0)
 
             with patch.object(vsmod, "Chroma", lambda **kw: FakeVS()):
-                got = mgr.load_or_build("deadbeef" * 4)      # 不传 chunks
+                got = mgr.load_or_build("deadbeef" * 4)  # 不传 chunks
             self.assertIsNotNone(got, "空集合应返回空库而不是抛异常")
         finally:
             shutil.rmtree(tmp, ignore_errors=True)
@@ -346,8 +367,8 @@ class TestPersistence(DbIsolated):
 
     def test_memory_survives_reconnect(self):
         """模拟「服务重启」：丢掉连接、重开同一个文件，三层记忆都还在"""
-        from agent.memory import Memory
         import agent.persistence as p
+        from agent.memory import Memory
 
         m = Memory("p-1")
         m.add_user("年假有几天", None)
@@ -368,6 +389,7 @@ class TestPersistence(DbIsolated):
 
     def test_different_sessions_are_isolated(self):
         from agent.memory import Memory
+
         a = Memory("iso-a")
         b = Memory("iso-b")
         a.add_user("A 的话", None)
@@ -380,8 +402,9 @@ class TestPersistence(DbIsolated):
         self.assertEqual(b.facts.get_all(), {"k": "vb"})
 
     def test_clear_all_wipes_db_rows(self):
-        from agent.memory import Memory
         import agent.persistence as p
+        from agent.memory import Memory
+
         m = Memory("wipe-1")
         m.add_user("x", None)
         m.update_facts({"k": "v"})
@@ -400,7 +423,8 @@ class TestMultiDoc(unittest.TestCase):
 
     def _agent_stub(self):
         from agent.orchestrator import Agent
-        a = object.__new__(Agent)          # 跳过 __init__（不构造模型）
+
+        a = object.__new__(Agent)  # 跳过 __init__（不构造模型）
         a._session_docs = {}
         return a
 
@@ -409,7 +433,7 @@ class TestMultiDoc(unittest.TestCase):
         a = self._agent_stub()
         a.bind_document("s1", "h1")
         a.bind_document("s1", "h2")
-        a.bind_document("s1", "h1")        # 重复上传
+        a.bind_document("s1", "h1")  # 重复上传
         self.assertEqual(a.get_bound_documents("s1"), ["h1", "h2"])
         self.assertEqual(a.get_bound_documents("s2"), [])
 
@@ -423,6 +447,7 @@ class TestMultiDoc(unittest.TestCase):
         """不跑 __init__：避免构造 ChatTongyi（那需要 DASHSCOPE_API_KEY）"""
         from config.setting import QaConfig
         from querying.pipeline import RagPipeline
+
         pipe = object.__new__(RagPipeline)
         pipe._config = QaConfig()
         pipe._vectorstores = {}
@@ -439,8 +464,9 @@ class TestMultiDoc(unittest.TestCase):
 
         class FakeHybrid:
             def retrieve(self, q, k):
-                return [Document(page_content="某段内容" * 20,
-                                 metadata={"source": "a.pdf", "page": 0})]
+                return [
+                    Document(page_content="某段内容" * 20, metadata={"source": "a.pdf", "page": 0})
+                ]
 
         class BoomAnswer:
             def generate(self, *a, **kw):
@@ -471,8 +497,12 @@ class TestMultiDoc(unittest.TestCase):
                 self.tag = tag
 
             def retrieve(self, q, k):
-                return [Document(page_content="内容" * 30 + self.tag,
-                                 metadata={"source": self.tag + ".pdf", "page": 0})]
+                return [
+                    Document(
+                        page_content="内容" * 30 + self.tag,
+                        metadata={"source": self.tag + ".pdf", "page": 0},
+                    )
+                ]
 
         def fake_rerank(query, recalled_docs, final_top_n=4):
             seen["n"] = len(recalled_docs)
@@ -498,6 +528,7 @@ class TestChatRoute(DbIsolated):
     def test_agent_exception_returns_readable_reply(self):
         """修复点：以前模型超时/503 直接 500，用户只看到「服务异常」"""
         from fastapi.testclient import TestClient
+
         import api.main as appmod
         import api.routes.chat as chat_route
 
@@ -517,7 +548,9 @@ class TestChatRoute(DbIsolated):
 
     def test_empty_question_still_400(self):
         from fastapi.testclient import TestClient
+
         import api.main as appmod
+
         client = TestClient(appmod.app)
         r = client.post("/api/chat", json={"session_id": "s-x", "question": "   "})
         self.assertEqual(r.status_code, 400)
@@ -525,7 +558,9 @@ class TestChatRoute(DbIsolated):
     def test_health_works_without_api_key(self):
         """修复点：deps 改懒加载后，没配 Key 也能起服务、能自检"""
         from fastapi.testclient import TestClient
+
         import api.main as appmod
+
         client = TestClient(appmod.app)
         r = client.get("/api/health")
         self.assertEqual(r.status_code, 200)
@@ -546,17 +581,23 @@ class TestStreaming(DbIsolated):
         a = object.__new__(Agent)
         a._config = QaConfig()
         a.prepare = lambda sid, q: {
-            "kind": "stream", "route": "chitchat", "intent": "chitchat",
-            "confidence": 1.0, "evidence": [], "search_query": q,
-            "context": "", "session_id": sid,
+            "kind": "stream",
+            "route": "chitchat",
+            "intent": "chitchat",
+            "confidence": 1.0,
+            "evidence": [],
+            "search_query": q,
+            "context": "",
+            "session_id": sid,
         }
         a._stream_chain = lambda plan, q, mem: iter(["你", "好"])
         a._remember = lambda sid, q, ans: None
         a._get_memory = lambda sid: None
 
         events = list(a.chat_stream("s", "你好"))
-        self.assertEqual([e["event"] for e in events],
-                         ["meta", "evidence", "delta", "delta", "done"])
+        self.assertEqual(
+            [e["event"] for e in events], ["meta", "evidence", "delta", "delta", "done"]
+        )
         self.assertEqual(events[-1]["answer"], "你好")
 
     def test_fixed_answer_still_streams_once(self):
@@ -567,9 +608,15 @@ class TestStreaming(DbIsolated):
         a = object.__new__(Agent)
         a._config = QaConfig()
         a.prepare = lambda sid, q: {
-            "kind": "answer", "answer": "未找到相关资料。", "route": "rag",
-            "intent": "rag", "confidence": 0.9, "evidence": [],
-            "search_query": q, "context": "", "session_id": sid,
+            "kind": "answer",
+            "answer": "未找到相关资料。",
+            "route": "rag",
+            "intent": "rag",
+            "confidence": 0.9,
+            "evidence": [],
+            "search_query": q,
+            "context": "",
+            "session_id": sid,
         }
         a._remember = lambda sid, q, ans: None
 
@@ -579,21 +626,26 @@ class TestStreaming(DbIsolated):
 
     def test_sse_endpoint_emits_frames(self):
         from fastapi.testclient import TestClient
+
         import api.main as appmod
         import api.routes.chat as chat_route
 
         class FakeAgent:
             def chat_stream(self, sid, q):
-                yield {"event": "meta", "intent": "rag", "route": "rag",
-                       "confidence": 0.9, "search_query": q}
+                yield {
+                    "event": "meta",
+                    "intent": "rag",
+                    "route": "rag",
+                    "confidence": 0.9,
+                    "search_query": q,
+                }
                 yield {"event": "delta", "text": "年假"}
                 yield {"event": "delta", "text": "五天"}
                 yield {"event": "done", "answer": "年假五天"}
 
         with patch.object(chat_route, "get_agent", lambda: FakeAgent()):
             client = TestClient(appmod.app)
-            r = client.post("/api/chat/stream",
-                            json={"session_id": "s", "question": "年假有几天"})
+            r = client.post("/api/chat/stream", json={"session_id": "s", "question": "年假有几天"})
 
         self.assertEqual(r.status_code, 200)
         self.assertIn("text/event-stream", r.headers["content-type"])

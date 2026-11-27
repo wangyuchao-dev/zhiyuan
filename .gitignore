@@ -1,21 +1,39 @@
-# 运行时产物
-__pycache__/
-*.py[cod]
+# ---- 密钥与本地配置 ----
+.env
+*.env
+!.env.example
+
+# ---- 虚拟环境 ----
 .venv/
 venv/
 
-# 向量库与运行数据（体积大、可重建）
-indexing/chroma_db/
+# ---- 运行时产物 ----
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
 runtime/
+
+# ---- 向量库与上传件（体积大、可重建；公开仓库时不提交）----
+indexing/chroma_db/
 uploads/*.pdf
 
-# 密钥
-.env
-*.env
+# ---- 评测产物（样例报告保留，逐次结果不入库）----
+eval/results/*.json
 
-# 编辑器
+# ---- 测试与覆盖率 ----
+.pytest_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+# ---- 工具缓存 ----
+.ruff_cache/
+.mypy_cache/
+
+# ---- 编辑器 ----
 .idea/
 .vscode/
-
-# 评测产物（样例报告保留）
-eval/results/*.json
+*.swp
+.DS_Store

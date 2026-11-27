@@ -12,14 +12,17 @@
     4. 全角数字与字母 —— 「５０ＭＢ」检索不到「50MB」；
     5. 连续重复段落 —— 扫描 PDF 的双栏重叠、复制粘贴的残留。
 """
+
 from __future__ import annotations
 
 import re
 import unicodedata
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Tuple
+from typing import Any
 
-_PAGE_NO = re.compile(r"^\s*[-—–－]?\s*(?:第\s*)?\d{1,4}\s*(?:页)?\s*(?:[/／共]\s*\d{1,4}\s*页?)?\s*[-—–－]?\s*$")
+_PAGE_NO = re.compile(
+    r"^\s*[-—–－]?\s*(?:第\s*)?\d{1,4}\s*(?:页)?\s*(?:[/／共]\s*\d{1,4}\s*页?)?\s*[-—–－]?\s*$"
+)
 _PAGE_TOTAL = re.compile(r"第\s*\d+\s*页\s*[，,]?\s*共\s*\d+\s*页")
 _TOC_LINE = re.compile(r"[.．·…]{4,}\s*\d{1,4}\s*$")
 _ZW = re.compile(r"[\u200b-\u200f\u2028\u2029\ufeff]")
@@ -31,19 +34,20 @@ _TRAIL = re.compile(r"[ \t]+$", re.M)
 @dataclass
 class CleanResult:
     text: str
-    stats: Dict[str, Any] = field(default_factory=dict)
+    stats: dict[str, Any] = field(default_factory=dict)
 
 
-def _pages(text: str) -> List[str]:
+def _pages(text: str) -> list[str]:
     """按换页符切页；没有换页符就按 40 行粗略切（页眉页脚检测需要「跨页重复」）。"""
     if "\f" in text:
         return text.split("\f")
     lines = text.split("\n")
-    return ["\n".join(lines[i:i + 40]) for i in range(0, len(lines), 40)] or [text]
+    return ["\n".join(lines[i : i + 40]) for i in range(0, len(lines), 40)] or [text]
 
 
-def find_repeated_lines(text: str, min_pages: int = 3, ratio: float = 0.3,
-                        max_len: int = 40) -> List[str]:
+def find_repeated_lines(
+    text: str, min_pages: int = 3, ratio: float = 0.3, max_len: int = 40
+) -> list[str]:
     """找跨页重复的短行（页眉页脚）。
 
     判据：出现在 ≥ max(min_pages, ratio×页数) 个页面上，且长度 ≤ max_len。
@@ -53,7 +57,7 @@ def find_repeated_lines(text: str, min_pages: int = 3, ratio: float = 0.3,
     if len(pages) < min_pages:
         return []
     need = max(min_pages, int(len(pages) * ratio))
-    counter: Dict[str, int] = {}
+    counter: dict[str, int] = {}
     for page in pages:
         seen = set()
         for line in page.split("\n"):
@@ -64,41 +68,42 @@ def find_repeated_lines(text: str, min_pages: int = 3, ratio: float = 0.3,
     return [s for s, c in counter.items() if c >= need]
 
 
-def clean_text(raw: str, *, drop_header_footer: bool = True,
-               drop_toc: bool = True) -> CleanResult:
+def clean_text(raw: str, *, drop_header_footer: bool = True, drop_toc: bool = True) -> CleanResult:
     """主入口。返回清洗后的文本 + 统计（统计必须能说清「去了多少」）。"""
     raw = raw or ""
-    stats: Dict[str, Any] = {"in_chars": len(raw)}
+    stats: dict[str, Any] = {"in_chars": len(raw)}
 
     # ---- 0. 先在原文上找跨页重复行 ----
     # 必须在任何字符处理之前做：换页符一旦被当控制符删掉，页与页就会粘成一行，
     # 页眉也跟着粘到正文尾部，再也识别不出来（这是实测踩到的）。
     # 注意：repeated 必须与正文用同一套归一化（NFKC 会把全角括号变成半角），
     # 否则「原文找到的页眉」和「清洗后的行」永远对不上 —— 这是第二次踩。
-    repeated = ({unicodedata.normalize("NFKC", r).strip()
-                 for r in find_repeated_lines(raw)} if drop_header_footer else set())
+    repeated = (
+        {unicodedata.normalize("NFKC", r).strip() for r in find_repeated_lines(raw)}
+        if drop_header_footer
+        else set()
+    )
 
     # ---- 1. 字符级 ----
-    text = unicodedata.normalize("NFKC", raw)       # 全角 → 半角（５０ＭＢ → 50MB）
-    text = text.replace("\f", "\n\n")              # 换页 → 空行，保住行边界
+    text = unicodedata.normalize("NFKC", raw)  # 全角 → 半角（５０ＭＢ → 50MB）
+    text = text.replace("\f", "\n\n")  # 换页 → 空行，保住行边界
     text = _ZW.sub("", text)
     text = _CTRL.sub("", text)
-    text = text.replace("\ufffd", "")               # 解码失败留下的替换字符
+    text = text.replace("\ufffd", "")  # 解码失败留下的替换字符
 
     # ---- 2. 页眉页脚 ----
     removed_hf = 0
     if repeated:
-        if repeated:
-            kept = []
-            for line in text.split("\n"):
-                if line.strip() and line.strip() in repeated:
-                    removed_hf += 1
-                    continue
-                kept.append(line)
-            text = "\n".join(kept)
+        kept = []
+        for line in text.split("\n"):
+            if line.strip() and line.strip() in repeated:
+                removed_hf += 1
+                continue
+            kept.append(line)
+        text = "\n".join(kept)
 
     # ---- 3. 行级：页码 / 目录 ----
-    kept_lines: List[str] = []
+    kept_lines: list[str] = []
     removed_page, removed_toc = 0, 0
     for line in text.split("\n"):
         s = line.rstrip()
@@ -113,12 +118,12 @@ def clean_text(raw: str, *, drop_header_footer: bool = True,
 
     # ---- 4. 段落级：去掉连续重复段 ----
     paras = re.split(r"\n\s*\n", text)
-    deduped: List[str] = []
+    deduped: list[str] = []
     removed_dup = 0
     prev_norm = None
     for p in paras:
         key = re.sub(r"\s+", "", p)
-        if key and key == prev_norm:          # 只去「紧邻重复」，避免误删正文里的重复句
+        if key and key == prev_norm:  # 只去「紧邻重复」，避免误删正文里的重复句
             removed_dup += 1
             continue
         deduped.append(p)
@@ -130,20 +135,23 @@ def clean_text(raw: str, *, drop_header_footer: bool = True,
     text = re.sub(r"[ \t]{2,}", " ", text)
     text = _MULTI_BLANK.sub("\n\n", text).strip()
 
-    stats.update({
-        "out_chars": len(text),
-        "kept_ratio": round(len(text) / max(1, len(raw)), 3),
-        "removed_header_footer": removed_hf,
-        "removed_page_number": removed_page,
-        "removed_toc": removed_toc,
-        "removed_duplicate_para": removed_dup,
-        "pages": len(_pages(raw)),
-    })
+    stats.update(
+        {
+            "out_chars": len(text),
+            "kept_ratio": round(len(text) / max(1, len(raw)), 3),
+            "removed_header_footer": removed_hf,
+            "removed_page_number": removed_page,
+            "removed_toc": removed_toc,
+            "removed_duplicate_para": removed_dup,
+            "pages": len(_pages(raw)),
+        }
+    )
     return CleanResult(text, stats)
 
 
-def quality_gate(result: CleanResult, min_ratio: float = 0.3,
-                 min_chars: int = 50) -> Tuple[bool, str]:
+def quality_gate(
+    result: CleanResult, min_ratio: float = 0.3, min_chars: int = 50
+) -> tuple[bool, str]:
     """入库前的门槛：清完太短或丢太多，多半是 PDF 本身有问题（扫描件/加密）。
 
     宁可拒收并提示「可能是扫描件」，也不要把半页乱码灌进向量库 ——

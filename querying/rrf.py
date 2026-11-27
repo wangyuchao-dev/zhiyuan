@@ -2,13 +2,14 @@
 
 为什么不用加权求和：两路分数量纲不同（向量 0~1、BM25 0~30），直接相加没有意义。
 k=60 是平滑常数，避免头部名次差距过分悬殊。"""
+
 import hashlib
 import os
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from typing import Dict, List, Sequence
+from collections.abc import Sequence
 
 from langchain_core.documents import Document
 
@@ -28,10 +29,10 @@ def _doc_key(doc: Document) -> str:
 
 
 def rrf_fuse(
-        result_lists: Sequence[List[Document]],
-        k: int = 60,
-        top_n: int = None,
-) -> List[Document]:
+    result_lists: Sequence[list[Document]],
+    k: int = 60,
+    top_n: int = None,
+) -> list[Document]:
     """
     Reciprocal Rank Fusion（倒数排名融合）。
 
@@ -53,8 +54,8 @@ def rrf_fuse(
         return []
 
     # 用稳定键做唯一标识（同一片段在多路里出现要合并，内容相同但出处不同不能合并）
-    doc_map: Dict[str, Document] = {}
-    scores: Dict[str, float] = {}
+    doc_map: dict[str, Document] = {}
+    scores: dict[str, float] = {}
 
     for results in result_lists:
         for rank, doc in enumerate(results, start=1):
@@ -70,10 +71,10 @@ def rrf_fuse(
 
 
 def rrf_scores(
-        result_lists: Sequence[List[Document]],
-        k: int = 60,
-        weights: Sequence[float] = None,
-) -> List[tuple]:
+    result_lists: Sequence[list[Document]],
+    k: int = 60,
+    weights: Sequence[float] = None,
+) -> list[tuple]:
     """
     返回 [(doc, rrf_score)]。
 
@@ -85,10 +86,10 @@ def rrf_scores(
     if weights is None:
         weights = [1.0] * len(result_lists)
 
-    doc_map: Dict[str, Document] = {}
-    scores: Dict[str, float] = {}
+    doc_map: dict[str, Document] = {}
+    scores: dict[str, float] = {}
 
-    for w, results in zip(weights, result_lists):
+    for w, results in zip(weights, result_lists, strict=False):
         for rank, doc in enumerate(results, start=1):
             key = _doc_key(doc)
             doc_map[key] = doc

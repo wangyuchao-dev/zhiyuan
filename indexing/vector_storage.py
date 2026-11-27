@@ -2,8 +2,8 @@
 
 建库时显式指定 hnsw:space=cosine —— L2 距离在 1536 维里没有上界，
 无法定义「多近算相关」；cosine 固定在 0~2，阈值才有意义。"""
+
 from pathlib import Path
-from typing import List, Optional
 
 from langchain_chroma import Chroma
 from langchain_community.embeddings import DashScopeEmbeddings
@@ -37,16 +37,15 @@ class VectorStoreManager:
             except Exception:
                 return 0
 
-    def load_or_build(self, file_hash: str, chunks: Optional[List[Document]] = None) -> Chroma:
-
+    def load_or_build(self, file_hash: str, chunks: list[Document] | None = None) -> Chroma:
         """取集合：有数据直接复用；为空且给了 chunks 就建；为空又没 chunks 按空库返回"""
         persist_dir = str(self._persist_dir)
 
         vs = Chroma(
             persist_directory=persist_dir,
-            collection_name=file_hash, # 集合名字就是文档的hash值
+            collection_name=file_hash,  # 集合名字就是文档的hash值
             embedding_function=self._embeddings,
-            collection_metadata={"name": "AI文档", "hnsw:space": "cosine"}
+            collection_metadata={"name": "AI文档", "hnsw:space": "cosine"},
         )
 
         if self._count(vs) > 0:
@@ -61,9 +60,6 @@ class VectorStoreManager:
             print(f"[vectorstore] 集合 {file_hash[:8]} 为空且未提供 chunks，按空库处理")
             return vs
 
-        vs.add_documents(
-            documents=chunks,
-            ids=[f"doc-{idx}" for idx in range(1, len(chunks) + 1)]
-        )
+        vs.add_documents(documents=chunks, ids=[f"doc-{idx}" for idx in range(1, len(chunks) + 1)])
 
         return vs

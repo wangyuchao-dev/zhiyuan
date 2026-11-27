@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 会话记忆的持久化层（标准库 sqlite3，不引入新依赖）。
 
@@ -21,11 +20,13 @@
     sqlite3 连接默认禁止跨线程使用，而 FastAPI 的同步路由跑在线程池里，
     所以连接用 check_same_thread=False，并配一把进程内锁串行化写操作。
 """
+
+import contextlib
 import json
 import os
 import sqlite3
 import threading
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Optional
 
 from config.setting import QaConfig
 
@@ -87,7 +88,7 @@ class MemoryDB:
             )
             self._conn.commit()
 
-    def get_messages(self, session_id: str, limit: Optional[int] = None) -> List[Tuple[str, str]]:
+    def get_messages(self, session_id: str, limit: int | None = None) -> list[tuple[str, str]]:
         """
         取消息，按 seq 升序。
 
@@ -126,13 +127,13 @@ class MemoryDB:
             )
             self._conn.commit()
 
-    def get_facts(self, session_id: str) -> Dict[str, Any]:
+    def get_facts(self, session_id: str) -> dict[str, Any]:
         """取某会话的全部事实槽（新建字典，改它不影响库）"""
         with _LOCK:
             rows = self._conn.execute(
                 "SELECT key, value FROM facts WHERE session_id = ?", (session_id,)
             ).fetchall()
-        out: Dict[str, Any] = {}
+        out: dict[str, Any] = {}
         for r in rows:
             try:
                 out[r["key"]] = json.loads(r["value"])
@@ -200,7 +201,7 @@ def db() -> MemoryDB:
     return _DB
 
 
-def set_db_path(path: Optional[str] = None) -> MemoryDB:
+def set_db_path(path: str | None = None) -> MemoryDB:
     """
     切换数据库文件（单元测试用，也方便以后把记忆指到别的盘）。
 
@@ -208,10 +209,8 @@ def set_db_path(path: Optional[str] = None) -> MemoryDB:
     """
     global _DB
     if _DB is not None:
-        try:
+        with contextlib.suppress(Exception):
             _DB.close()
-        except Exception:
-            pass
         _DB = None
     _DB = MemoryDB(path or QaConfig().memory_db_path)
     return _DB

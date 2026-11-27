@@ -1,0 +1,23 @@
+# 提交前自动跑：装一次就不用再想
+#   pip install pre-commit && pre-commit install
+#   pre-commit run --all-files      # 全量跑一次
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-toml
+      - id: check-added-large-files
+        args: ["--maxkb=2048"]        # 向量库、PDF 这类大文件不该进仓库
+      - id: check-merge-conflict
+      - id: check-case-conflict
+      - id: detect-private-key         # 拦 API Key / 私钥，这条比什么都重要
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.6.9
+    hooks:
+      - id: ruff
+        args: ["--fix"]
+      - id: ruff-format

@@ -4,6 +4,7 @@
 生成一份约 60 万字的模拟手册（50 页、每页带页眉页脚与页码、混入全角字符与重复段），
 走完整条 clean → 父子分块 → 上下文预算，记录耗时与规模并断言不退化。
 """
+
 import os
 import sys
 import time
@@ -14,10 +15,10 @@ if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
 from core.cache import Cache, MemoryCacheBackend, build_cache, corpus_fingerprint  # noqa: E402
-from core.context_budget import ContextPacker                                      # noqa: E402
-from core.postcheck import Severity, postcheck, summarize                           # noqa: E402
-from indexing.clean import clean_text, find_repeated_lines, quality_gate            # noqa: E402
-from indexing.parent_child import ParentChildIndex                                  # noqa: E402
+from core.context_budget import ContextPacker  # noqa: E402
+from core.postcheck import Severity, postcheck, summarize  # noqa: E402
+from indexing.clean import clean_text, find_repeated_lines, quality_gate  # noqa: E402
+from indexing.parent_child import ParentChildIndex  # noqa: E402
 
 
 class TestClean(unittest.TestCase):
@@ -73,17 +74,17 @@ class TestCache(unittest.TestCase):
     def test_key_changes_with_corpus(self):
         k1 = self.c.build_key("retr", "q", corpus_fp=corpus_fingerprint(["h1"]))
         k2 = self.c.build_key("retr", "q", corpus_fp=corpus_fingerprint(["h1", "h2"]))
-        self.assertNotEqual(k1, k2)                     # 加文档后缓存自动失效
+        self.assertNotEqual(k1, k2)  # 加文档后缓存自动失效
 
     def test_ttl_expiry(self):
         b = MemoryCacheBackend()
         b.set("k", "v", ttl=1)
         self.assertEqual(b.get("k"), "v")
-        b._data["k"] = (time.time() - 1, "v")           # 手动过期，不 sleep
+        b._data["k"] = (time.time() - 1, "v")  # 手动过期，不 sleep
         self.assertIsNone(b.get("k"))
 
     def test_degrade_when_redis_unavailable(self):
-        c = build_cache("redis://127.0.0.1:6399/0")     # 故意给错的端口
+        c = build_cache("redis://127.0.0.1:6399/0")  # 故意给错的端口
         self.assertIsInstance(c.backend, MemoryCacheBackend)
 
 
@@ -100,7 +101,7 @@ class TestPostcheck(unittest.TestCase):
         self.assertFalse(r.ok)
         self.assertIs(r.action, Severity.BLOCK)
         self.assertIn("E1035", [v.detail for v in r.violations])
-        self.assertNotIn("E1035", r.answer)             # 换成保守话术
+        self.assertNotIn("E1035", r.answer)  # 换成保守话术
 
     def test_number_drift_blocked(self):
         r = postcheck("单个文档不得超过 500 MB。", self.EV)
@@ -114,7 +115,7 @@ class TestPostcheck(unittest.TestCase):
         r = postcheck("E1017 是任务调度超时[1]，另有说明[7]。", self.EV)
         self.assertIs(r.action, Severity.ANNOTATE)
         self.assertIn("[1]", r.answer)
-        self.assertNotIn("[7]", r.answer)               # 越界编号被移除
+        self.assertNotIn("[7]", r.answer)  # 越界编号被移除
 
     def test_summary(self):
         reports = [postcheck("E1035 是网络中断。", self.EV), postcheck("正常。", self.EV)]
@@ -133,7 +134,7 @@ def make_big_doc(pages: int = 800, paras_per_page: int = 12) -> str:
                 f"第 {p}-{i} 条：出现 E{1000 + i} 时，请在 5 分钟内重启任务节点，"
                 f"并检查磁盘占用是否超过８０％，单个日志文件不得超过５０ＭＢ。"
             )
-        if p % 5 == 0:                                   # 每 5 页插一段重复内容
+        if p % 5 == 0:  # 每 5 页插一段重复内容
             lines.append("本章修订记录：2026-11-20 修订。\n\n本章修订记录：2026-11-20 修订。")
         parts.append("\n".join(lines))
     return "\f".join(parts)
@@ -154,12 +155,14 @@ class TestLargeDocument(unittest.TestCase):
         cls.doc = cls.index.add("manual", cls.clean.text)
         t_index = time.perf_counter() - cls.t1
 
-        print(f"\n[大文本] 原文 {len(cls.raw):,} 字 → 清洗后 {len(cls.clean.text):,} 字"
-              f"（{t_clean * 1000:.0f}ms）｜父块 {len(cls.doc.parents)} / 子块 {len(cls.doc.children)}"
-              f"（{t_index * 1000:.0f}ms）")
+        print(
+            f"\n[大文本] 原文 {len(cls.raw):,} 字 → 清洗后 {len(cls.clean.text):,} 字"
+            f"（{t_clean * 1000:.0f}ms）｜父块 {len(cls.doc.parents)} / 子块 {len(cls.doc.children)}"
+            f"（{t_index * 1000:.0f}ms）"
+        )
 
     def test_scale_is_large_enough(self):
-        self.assertGreater(len(self.raw), 500_000)        # 至少 50 万字，才算大文本
+        self.assertGreater(len(self.raw), 500_000)  # 至少 50 万字，才算大文本
         self.assertGreater(len(self.doc.children), 300)
 
     def test_noise_really_removed(self):
@@ -167,7 +170,7 @@ class TestLargeDocument(unittest.TestCase):
         self.assertGreaterEqual(s["removed_header_footer"], 700)
         self.assertGreaterEqual(s["removed_page_number"], 700)
         self.assertNotIn("（内部资料）", self.clean.text)
-        self.assertIn("50MB", self.clean.text)            # 全角已折半角
+        self.assertIn("50MB", self.clean.text)  # 全角已折半角
 
     def test_children_cover_whole_document(self):
         """不丢内容：子块拼起来应覆盖绝大多数正文（允许 overlap 带来的重复）。"""
@@ -198,7 +201,7 @@ class TestLargeDocument(unittest.TestCase):
         idx.add("manual", self.clean.text)
         elapsed = time.perf_counter() - t0
         print(f"[大文本] 重复分块 {elapsed * 1000:.0f}ms")
-        self.assertLess(elapsed, 10.0)                    # 10 秒上限，宽松防机器抖动
+        self.assertLess(elapsed, 10.0)  # 10 秒上限，宽松防机器抖动
 
 
 if __name__ == "__main__":

@@ -1,0 +1,95 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "zhiyuan"
+version = "1.2.0"
+description = "知渊 · 企业知识库问答 Agent（意图路由 + 三层记忆 + 混合检索 + 精排 + 七维评测）"
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "MIT" }
+authors = [{ name = "王玉超", email = "wangyuchao-dev@users.noreply.github.com" }]
+
+# 运行时依赖以此处为准（requirements.txt 保留给「不想装包、只要环境」的场景）
+dependencies = [
+    "fastapi>=0.110",
+    "uvicorn[standard]>=0.27",
+    "pydantic>=2.6",
+    "python-multipart>=0.0.9",
+    "langchain-core>=0.3",
+    "langchain-community>=0.3",
+    "langchain-chroma>=0.1",
+    "langchain-text-splitters>=0.3",
+    "chromadb>=0.5",
+    "rank-bm25>=0.2",
+    "dashscope>=1.20",
+    "pymupdf>=1.24",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-cov>=5.0",
+    "ruff>=0.6",
+    "pre-commit>=3.7",
+]
+
+[project.urls]
+Homepage = "https://github.com/wangyuchao-dev/zhiyuan"
+Issues = "https://github.com/wangyuchao-dev/zhiyuan/issues"
+
+# ---------------- 代码质量 ----------------
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+exclude = [".venv", "indexing/chroma_db", "runtime", "uploads"]
+
+[tool.ruff.lint]
+# E/W pycodestyle、F pyflakes、I isort、UP pyupgrade、B bugbear、C4 comprehension、SIM simplify
+select = ["E", "W", "F", "I", "UP", "B", "C4", "SIM"]
+# 行长交给 formatter；中文注释按字符数算容易误报
+ignore = ["E501"]
+
+[tool.ruff.lint.per-file-ignores]
+# 测试里允许 assert、允许魔法值；脚本靠 sys.path 引导，导入不在顶部是有意的
+"tests/*" = ["B011", "SIM117", "E402", "UP031"]
+# 这两个是离线评测脚本：本身要改 sys.path 才能 import 项目包
+"querying/eval_*.py" = ["E402"]
+# FastAPI 的 File()/Form()/Depends() 写在参数默认值是框架规定写法
+"api/routes/*" = ["B008"]
+# 评测脚本是离线工具，允许直接 print
+"eval/*" = ["T201"]
+
+[tool.ruff.format]
+quote-style = "double"
+
+# ---------------- 测试 ----------------
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q --strict-markers"
+filterwarnings = [
+    "ignore::DeprecationWarning",
+]
+
+# ---------------- 覆盖率 ----------------
+[tool.coverage.run]
+source = ["agent", "api", "config", "core", "indexing", "querying", "skills", "tools"]
+omit = [
+    "*/.venv/*",
+    "tests/*",
+    "eval/*",
+    "*/chroma_db/*",
+]
+
+[tool.coverage.report]
+# 当前实测 73%；门槛定 65 —— 留出重构时的正常波动，
+# 又能挡住「新加一堆没测的代码把覆盖率拖垮」
+fail_under = 65
+show_missing = true
+skip_covered = true
+exclude_lines = [
+    "pragma: no cover",
+    "if __name__ == .__main__.:",
+    "raise NotImplementedError",
+]

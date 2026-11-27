@@ -1,17 +1,14 @@
 """向量召回：调 Chroma 的相似度检索，并把分数归一到 0~1。
 
 建库时指定了 cosine，所以 relevance score 有绝对含义，可以直接设阈值。"""
-from typing import List, Tuple
+
 from langchain_chroma import Chroma
 from langchain_core.documents import Document
 
 
 def recall_with_scores(
-        query: str,
-        vectorstore: Chroma,
-        k: int = 10,
-        min_score: float = 0.0
-) -> Tuple[List[Document], List[float]]:
+    query: str, vectorstore: Chroma, k: int = 10, min_score: float = 0.0
+) -> tuple[list[Document], list[float]]:
     """
     向量检索召回
     :param query: 查询字符串
