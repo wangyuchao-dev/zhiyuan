@@ -2,8 +2,8 @@
 
 [![CI](https://github.com/wangyuchao-dev/zhiyuan/actions/workflows/ci.yml/badge.svg)](https://github.com/wangyuchao-dev/zhiyuan/actions/workflows/ci.yml)
 ![Python](https://img.shields.io/badge/python-3.12-blue)
-![Tests](https://img.shields.io/badge/tests-120-brightgreen)
-![Coverage](https://img.shields.io/badge/coverage-74.5%25-brightgreen)
+![Tests](https://img.shields.io/badge/tests-126-brightgreen)
+![Coverage](https://img.shields.io/badge/coverage-75%25-brightgreen)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
 把几十页制度 PDF 变成「问一句话、答案带出处」的知识库。
@@ -30,7 +30,7 @@
 | 语义类 | 11/13（85%） | 11/13（85%） | 持平——混合检索不是万灵药 |
 | 典型问答耗时 | 7 s | **2.3 s** | 规则快判意图省一次模型调用 + 无指代词时跳过改写 |
 
-单元测试 **120 个**，`pytest` **不联网、不花钱、不依赖数据库**，约 6 秒跑完，覆盖率 74.5%。
+单元测试 **126 个**，`pytest` **不联网、不花钱、不依赖数据库**，约 6 秒跑完，覆盖率 75%。
 
 ## 目录
 
@@ -50,7 +50,7 @@ skills/       registry（懒加载）· fault-code-lookup/SKILL.md（示例技�
 eval/         七维评测框架（见下方「评测」）
 api/          main（装配）· deps（懒加载）· middleware（请求 ID）· schemas
               routes/ops（health / ready / version）· routes/chat · routes/documents
-tests/        test_core · test_wiring · test_agent_infra · test_data_pipeline · test_logging（共 120 例）
+tests/        test_core · test_wiring · test_agent_infra · test_data_pipeline · test_logging（共 126 例）
 samples/      样例语料（6 份 PDF，见 samples/README.md）：常规文档 / 错误码手册 / 带页眉页脚 / 扫描件 / 长文档
 web/          index.html（Vue 3 单页）
 scripts/      check.ps1（与 CI 同款）· lint.ps1 · test.ps1 · make_samples.py（重新生成样例）
@@ -177,6 +177,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\check.ps1
 | 技能命中 | 468 字注入 | 「E1017 是什么错误」命中 `fault-code-lookup`，未命中的问题注入 0 字 |
 | 上下文预算 | 2600 token | 实测单次用 614–693 token，4 条证据全部装下、丢弃 0 条 |
 | 校验拦截 | 见测试 | 「保留 99 年」拦下；「三年」与「3 年」都放行（归一化后一致） |
+| 阈值调优 | 0.3 → 0.45 | 0.3 下 20 道题 **0 道被过滤**（等于没过滤）；0.45 下 5 道为空，靠降级救回 |
 
 ## 四个我认为值得说的设计
 
