@@ -50,9 +50,10 @@ skills/       registry（懒加载）· fault-code-lookup/SKILL.md（示例技�
 eval/         七维评测框架（见下方「评测」）
 api/          main（装配）· deps（懒加载）· middleware（请求 ID）· schemas
               routes/ops（health / ready / version）· routes/chat · routes/documents
-tests/        test_core · test_ingestion · test_agent_infra · test_data_pipeline（共 96 例）
+tests/        test_core · test_wiring · test_agent_infra · test_data_pipeline · test_logging（共 120 例）
+samples/      样例语料（6 份 PDF，见 samples/README.md）：常规文档 / 错误码手册 / 带页眉页脚 / 扫描件 / 长文档
 web/          index.html（Vue 3 单页）
-scripts/      check.ps1（与 CI 同款）· lint.ps1 · test.ps1
+scripts/      check.ps1（与 CI 同款）· lint.ps1 · test.ps1 · make_samples.py（重新生成样例）
 .github/      workflows/ci.yml · workflows/release.yml · PR 与 Issue 模板
 ```
 
@@ -79,7 +80,8 @@ docker compose up -d --build
 传一份 PDF 到 `uploads/`（或走 `POST /api/documents` 上传），系统会切分、向量化、写入 `indexing/chroma_db/`。
 首次没有向量库也能起服务：`/api/health` 只看进程活着，`/api/ready` 会逐项告诉你缺什么（密钥 / 向量库 / 运行目录）。
 
-> 仓库未附带知识库 PDF 与向量库（`.gitignore` 已排除），放任意 PDF 到 `uploads/` 即可复现。
+> 仓库自带 6 份样例语料在 `samples/`（见 `samples/README.md`），上传其中任意一份即可复现。
+> 向量库不随仓库提供（体积大、可重建），首次入库会自动生成。
 
 ## 工程化
 
