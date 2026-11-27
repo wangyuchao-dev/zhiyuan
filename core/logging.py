@@ -40,7 +40,7 @@ class JsonFormatter(logging.Formatter):
 
 
 class TextFormatter(logging.Formatter):
-    """开发期用：人眼扫得快，带 request_id 前 8 位。"""
+    """开发期用：人眼扫得快，带 request_id 前 8 位与业务字段。"""
 
     def format(self, record: logging.LogRecord) -> str:
         rid = request_id_var.get()
@@ -49,6 +49,13 @@ class TextFormatter(logging.Formatter):
             f"{time.strftime('%H:%M:%S', time.localtime(record.created))} "
             f"{record.levelname:<5} [{rid}] {record.name}: {record.getMessage()}"
         )
+        # extra 里的业务字段（method / path / status / duration_ms）必须带上，
+        # 否则访问日志只剩一个 "access"，等于白记
+        extras = {
+            k: v for k, v in record.__dict__.items() if k not in _RESERVED and not k.startswith("_")
+        }
+        if extras:
+            base += "  " + " ".join(f"{k}={v}" for k, v in extras.items())
         if record.exc_info:
             base += "\n" + self.formatException(record.exc_info)
         return base
