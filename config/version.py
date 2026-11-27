@@ -4,5 +4,5 @@
 散在多处迟早不一致。CI 里有一条断言校验它与 pyproject.toml 相同。
 """
 
-__version__ = "1.3.0"
+__version__ = "1.4.0"
 __version_info__ = tuple(int(p) for p in __version__.split(".") if p.isdigit())

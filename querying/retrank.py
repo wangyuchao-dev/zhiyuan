@@ -37,6 +37,8 @@ class RerankPipeline:
     def __init__(self, config: QaConfig, model: str = None) -> None:
         self.__config = config
         self.__model = model or config.rerank_model
+        # 最近一次精排的完整排序（过滤前），供上层的「阈值放宽」复用
+        self.last_ranked: list[tuple] = []
 
     def rerank(
         self, query: str, recalled_docs: list[Document], final_top_n: int = 4
@@ -87,6 +89,10 @@ class RerankPipeline:
         ]
 
         # 3. 阈值过滤 + 截断
+        # 保留过滤前的完整排序：上层做「阈值放宽」时直接用这份，
+        # 不必为了看一眼低分候选再调一次精排（那是白花一次钱和 1 秒钟）。
+        self.last_ranked = ranked
+
         min_score = getattr(self.__config, "min_score", 0.0)
         kept = []
         for doc, score in ranked:
@@ -94,11 +100,17 @@ class RerankPipeline:
             if score is not None and score < min_score:
                 continue
             kept.append((doc, score))
-        ranked = kept[:final_top_n]
 
-        # 4. 组装证据 + 格式化上下文
+        return self.to_evidence(kept[:final_top_n])
+
+    def to_evidence(self, items) -> tuple[list[RetrievedEvidence], str]:
+        """把 [(doc, score)] 转成 (证据列表, 上下文文本)。
+
+        抽成公开方法，是因为「阈值放宽」时需要从 last_ranked 里重新挑一批，
+        但转换格式必须和正常路径完全一致 —— 否则引用编号会和上下文对不上。
+        """
         evidence_list, context_lines = [], []
-        for idx, (doc, score) in enumerate(ranked, 1):
+        for idx, (doc, score) in enumerate(items, 1):
             meta = doc.metadata or {}
             ev = RetrievedEvidence(
                 content=doc.page_content,
@@ -110,9 +122,7 @@ class RerankPipeline:
             if ev.content:
                 page_str = f"第{ev.page + 1}页" if ev.page is not None else "未知页"
                 context_lines.append(f"[证据{idx} | 来源：{ev.source} | {page_str}]\n{ev.content}")
-        context = "\n\n".join(context_lines)
-
-        return evidence_list, context
+        return evidence_list, "\n\n".join(context_lines)
 
     def __filter(
         self, docs: list[Document], min_len: int = 40, max_len: int = 2000

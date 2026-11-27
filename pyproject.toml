@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "zhiyuan"
-version = "1.3.0"
+version = "1.4.0"
 description = "知渊 · 企业知识库问答 Agent（意图路由 + 三层记忆 + 混合检索 + 精排 + 七维评测）"
 readme = "README.md"
 requires-python = ">=3.12"

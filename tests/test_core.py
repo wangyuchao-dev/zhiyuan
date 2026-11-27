@@ -221,21 +221,29 @@ class TestRerank(unittest.TestCase):
         return Resp()
 
     def test_below_min_score_dropped(self):
-        """修复点：0.3 阈值以前定义了但从未生效"""
+        """阈值必须真生效：低于 min_score 的片段不能进上下文。
+
+        分数围绕当前 min_score 构造，不写死具体数值 ——
+        阈值是要按数据调的（0.3 → 0.45 调过一次），写死会让这个测试
+        在每次调参时假失败。
+        """
         import dashscope
 
+        from config.setting import QaConfig
+
+        th = QaConfig().min_score
         pipe = self._pipe()
         docs = self._docs(3)
         scores = [
-            {"index": 0, "relevance_score": 0.9},
-            {"index": 1, "relevance_score": 0.338},
+            {"index": 0, "relevance_score": min(0.99, round(th + 0.25, 3))},
+            {"index": 1, "relevance_score": max(0.02, round(th - 0.05, 3))},
             {"index": 2, "relevance_score": 0.1},
         ]
         with patch.object(
             dashscope.TextReRank, "call", staticmethod(lambda **kw: self._resp(scores))
         ):
             ev, ctx = pipe.rerank("q", docs, final_top_n=3)
-        self.assertEqual(len(ev), 2, "0.1 低于阈值必须被丢弃")
+        self.assertEqual(len(ev), 1, "低于阈值的两条必须被丢弃")
         self.assertNotIn(0.1, [e.score for e in ev])
         self.assertNotIn("内容2内容2", ctx)
 
