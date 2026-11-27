@@ -4,14 +4,15 @@
 以后加第四种存储时，上层一行都不用改。
 build_context() 负责拼上下文，顺序是「最近消息 → 摘要 → 关键事实」
 （事实放最后，规避 lost in the middle）。"""
-from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
 
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+
+from agent.chat_history_manager import ChatHistoryManager
 from agent.facts_manager import FactManager
 from agent.summary_manager import SummaryManager
-from agent.chat_history_manager import ChatHistoryManager
-
 
 SESSION_KEY = "session"
+
 
 class Memory:
     """单个会话的记忆中枢：历史 / 事实槽 / 摘要，三层各自独立，对外一个入口"""
@@ -30,34 +31,30 @@ class Memory:
 
         # 摘要存在 SummaryManager 的模块级 store 里：
         # 这样 Memory 实例被重建时，摘要不会丢。
-        self._summary = self.summary.get() # 本次会话最新的摘要
-        self._unsummaryed = 0 # 未摘要的对话条数
+        self._summary = self.summary.get()  # 本次会话最新的摘要
+        self._unsummaryed = 0  # 未摘要的对话条数
 
-    #触发阈值调用摘要的函数
+    # 触发阈值调用摘要的函数
     def _maybe_summary(self, llm):
         if self._unsummaryed < self.SUMMARY_TRIGGER:
             return
         # 用 ChatHistoryManager 的 get_recent_messages 取最近几条
         new_mgs = self.history.get_recent_messages(self._unsummaryed)
         self._summary = self.summary.generate_incremental_summary(self._summary, new_mgs, llm)
-        self.summary.set(self._summary)   # 落 store，别只存在实例里
+        self.summary.set(self._summary)  # 落 store，别只存在实例里
         self._unsummaryed = 0
 
-
-    def add_user(self,text:str,llm):
+    def add_user(self, text: str, llm):
         """写入用户这句话，并检查是否需要压摘要"""
-        self.history.add_message(HumanMessage(content = text))
+        self.history.add_message(HumanMessage(content=text))
         self._unsummaryed += 1
         self._maybe_summary(llm)
 
-
-    def add_ai(self,text:str,llm):
+    def add_ai(self, text: str, llm):
         """写入模型这条回复，并检查是否需要压摘要"""
-        self.history.add_message(AIMessage(content = text))
+        self.history.add_message(AIMessage(content=text))
         self._unsummaryed += 1
         self._maybe_summary(llm)
-
-
 
     # 存储关键事实：同key则覆盖、新增key则新增
     def update_facts(self, slots: dict):
@@ -67,9 +64,6 @@ class Memory:
         for key, value in slots.items():
             if value:
                 self.facts.put(key, value)  # 老师的方法叫 put，不是 set_fact
-
-
-
 
     # 核心方法：构建上下文的函数：【公式：上下文 = 最近消息 + 摘要 + 关键事实】
     # 顺序很关键：事实和摘要要放在【最后】，离用户这句话最近，模型才看得见。
@@ -102,7 +96,6 @@ class Memory:
             msgs.append(SystemMessage(content="\n".join(blocks)))
 
         return msgs
-
 
     def clear_all(self) -> None:
         """

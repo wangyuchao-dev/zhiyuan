@@ -1,19 +1,19 @@
 """混合检索：向量 + BM25 双路召回，用 RRF 按排名融合。
 
 两路分数量纲不同（向量 0~1、BM25 可能 0~30），不能直接相加，所以只比排名。"""
+
 import os
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from typing import List, Tuple
 
 from langchain_core.documents import Document
 
 from config.setting import QaConfig
-from querying.vector_retriever import recall_with_scores
 from querying.bm25_retriever import BM25Retriever
 from querying.rrf import rrf_scores
+from querying.vector_retriever import recall_with_scores
 
 
 class HybridRetriever:
@@ -36,11 +36,11 @@ class HybridRetriever:
         self._bm25 = BM25Retriever(vectorstore)
 
     def retrieve_with_scores(
-            self,
-            query: str,
-            k: int = None,
-            rrf_top_n: int = None,
-    ) -> Tuple[List[Document], List[float]]:
+        self,
+        query: str,
+        k: int = None,
+        rrf_top_n: int = None,
+    ) -> tuple[list[Document], list[float]]:
         """返回 (融合后的文档, 各自的 RRF 分数)"""
         k = k or self._config.recall_k
 
@@ -48,8 +48,11 @@ class HybridRetriever:
         dense_docs, _ = recall_with_scores(query, self._vs, k=k, min_score=0.0)
         sparse_docs = self._bm25.retrieve(query, k=k)
 
-        pairs = rrf_scores([dense_docs, sparse_docs], k=self._config.rrf_k,
-                           weights=[self._config.dense_weight, self._config.bm25_weight])
+        pairs = rrf_scores(
+            [dense_docs, sparse_docs],
+            k=self._config.rrf_k,
+            weights=[self._config.dense_weight, self._config.bm25_weight],
+        )
         if rrf_top_n:
             pairs = pairs[:rrf_top_n]
 
@@ -57,7 +60,7 @@ class HybridRetriever:
         scores = [s for _, s in pairs]
         return docs, scores
 
-    def retrieve(self, query: str, k: int = None, rrf_top_n: int = None) -> List[Document]:
+    def retrieve(self, query: str, k: int = None, rrf_top_n: int = None) -> list[Document]:
         """混合召回的简化入口，只要文档不要分数"""
         docs, _ = self.retrieve_with_scores(query, k=k, rrf_top_n=rrf_top_n)
         return docs

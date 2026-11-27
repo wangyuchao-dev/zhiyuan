@@ -4,9 +4,9 @@
 
 from langchain_community.embeddings import DashScopeEmbeddings
 
+from config.setting import QaConfig
 from indexing.hash_calculate import HashCalculate
 from indexing.upload_split import PdfIngestor
-from config.setting import QaConfig
 from indexing.vector_storage import VectorStoreManager
 
 
@@ -17,9 +17,12 @@ class IndexingPipeline:
         self._config = config
         self._hash_calculator = HashCalculate()
         self._ingestor = PdfIngestor(self._config)
-        self._vector_store = VectorStoreManager(self._config, DashScopeEmbeddings(
-            model=self._config.embedding_model,
-        ))
+        self._vector_store = VectorStoreManager(
+            self._config,
+            DashScopeEmbeddings(
+                model=self._config.embedding_model,
+            ),
+        )
 
     def build_from_source(self, pdf_source: str):
         # 1. 计算文件哈希

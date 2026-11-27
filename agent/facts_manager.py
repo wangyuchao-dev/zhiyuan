@@ -2,6 +2,7 @@
 
 写入是同 key 覆盖（只保留当前值），和历史「只追加」互补；
 值以 JSON 序列化，落 SQLite。"""
+
 import os
 import sys
 
@@ -15,7 +16,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 #
 # 存储位置：SQLite（agent/persistence.py）。值用 JSON 序列化，
 # 所以槽位里放 dict / list / 数字都可以，不限于字符串。
-from typing import Any, Optional
+from typing import Any
 
 from agent.persistence import db
 
@@ -30,7 +31,7 @@ class FactManager:
         """写入一条事实槽（同 key 覆盖）"""
         db().set_fact(self.chat_session_id, key, value)
 
-    def get(self, key: str) -> Optional[Any]:
+    def get(self, key: str) -> Any | None:
         """读取槽，不存在返回 None"""
         return db().get_facts(self.chat_session_id).get(key)
 

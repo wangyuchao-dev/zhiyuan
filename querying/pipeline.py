@@ -6,6 +6,7 @@
   generate_answer() / stream_answer() 依据证据生成
 
 上下文为空时直接返回「未找到相关资料」，不调模型。"""
+
 import os
 import sys
 
@@ -13,21 +14,22 @@ import sys
 # 顶层 import 在模块加载时就执行，放到 __main__ 里再改 sys.path 已经晚了
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from typing import List, Dict, Any
+from typing import Any
+
+from langchain_chroma import Chroma
 from langchain_community.chat_models import ChatTongyi
 from langchain_community.embeddings import DashScopeEmbeddings
-from langchain_chroma import Chroma
 from langchain_core.messages import BaseMessage
 
 from config.setting import QaConfig
 from indexing.vector_storage import VectorStoreManager
+from querying.answer import AnswerGenerator
+from querying.hybrid_retriever import HybridRetriever
 
 # 用绝对导入：querying 目录没有 __init__.py，
 # 写 from .xxx import 直接运行时会报 "attempted relative import with no known parent package"
 from querying.query_rewrite import QueryRewriter
-from querying.answer import AnswerGenerator
 from querying.retrank import RerankPipeline
-from querying.hybrid_retriever import HybridRetriever
 from querying.rrf import rrf_fuse
 
 
@@ -60,7 +62,7 @@ class RagPipeline:
             self._hybrid_cache[cache_key] = HybridRetriever(vectorstore, self._config)
         return self._hybrid_cache[cache_key]
 
-    def rewrite_query(self, question: str, chat_history: List[BaseMessage]) -> str:
+    def rewrite_query(self, question: str, chat_history: list[BaseMessage]) -> str:
         """
         对外暴露的查询改写入口。
 
@@ -69,8 +71,16 @@ class RagPipeline:
         """
         return self._rewriter.rewrite(question, chat_history)
 
-    def query(self, file_hash: str, question: str, chat_history: List[BaseMessage], *,
-              recall_k: int = 10, top_k: int = 4, precomputed_query: str = None) -> Dict[str, Any]:
+    def query(
+        self,
+        file_hash: str,
+        question: str,
+        chat_history: list[BaseMessage],
+        *,
+        recall_k: int = 10,
+        top_k: int = 4,
+        precomputed_query: str = None,
+    ) -> dict[str, Any]:
         """
         单文档查询 —— 保留旧签名，内部走多文档逻辑（只传一份）。
 
@@ -78,14 +88,24 @@ class RagPipeline:
         多文档改造不应该让它们全部返工。
         """
         return self.query_multi(
-            [file_hash], question, chat_history,
-            recall_k=recall_k, top_k=top_k, precomputed_query=precomputed_query,
+            [file_hash],
+            question,
+            chat_history,
+            recall_k=recall_k,
+            top_k=top_k,
+            precomputed_query=precomputed_query,
         )
 
-    def query_multi(self, file_hashes: List[str], question: str,
-                    chat_history: List[BaseMessage], *,
-                    recall_k: int = 10, top_k: int = 4,
-                    precomputed_query: str = None) -> Dict[str, Any]:
+    def query_multi(
+        self,
+        file_hashes: list[str],
+        question: str,
+        chat_history: list[BaseMessage],
+        *,
+        recall_k: int = 10,
+        top_k: int = 4,
+        precomputed_query: str = None,
+    ) -> dict[str, Any]:
         """
         跨多份文档的 RAG 查询（检索 + 生成，一次性返回）。
 
@@ -93,8 +113,12 @@ class RagPipeline:
         拆开是为了让流式接口复用同一套检索逻辑（先检索，再逐字流式生成）。
         """
         found = self.retrieve_multi(
-            file_hashes, question, chat_history,
-            recall_k=recall_k, top_k=top_k, precomputed_query=precomputed_query,
+            file_hashes,
+            question,
+            chat_history,
+            recall_k=recall_k,
+            top_k=top_k,
+            precomputed_query=precomputed_query,
         )
 
         # 没有任何一条证据过阈值：直接给固定答复，不调模型。
@@ -105,15 +129,19 @@ class RagPipeline:
             # 注意：这里传【原始问题】而不是改写后的 search_query。
             # 改写的目的是「让检索更准」，不是「替换用户的话」——
             # 用户原话里的编号、时间、限定词一旦被改写丢掉，答案就会跑偏。
-            found["answer"] = self._answer_gen.generate(
-                question, chat_history, found["context"]
-            )
+            found["answer"] = self._answer_gen.generate(question, chat_history, found["context"])
         return found
 
-    def retrieve_multi(self, file_hashes: List[str], question: str,
-                       chat_history: List[BaseMessage], *,
-                       recall_k: int = 10, top_k: int = 4,
-                       precomputed_query: str = None) -> Dict[str, Any]:
+    def retrieve_multi(
+        self,
+        file_hashes: list[str],
+        question: str,
+        chat_history: list[BaseMessage],
+        *,
+        recall_k: int = 10,
+        top_k: int = 4,
+        precomputed_query: str = None,
+    ) -> dict[str, Any]:
         """
         只做检索，不生成答案。
 
@@ -137,13 +165,11 @@ class RagPipeline:
         search_query = precomputed_query or self._rewriter.rewrite(question, chat_history)
 
         # 2. 逐份文档做混合召回
-        per_doc_hits: List[List] = []
+        per_doc_hits: list[list] = []
         for file_hash in file_hashes or []:
             try:
                 vectorstore = self._load_vectorstore(file_hash)
-                docs = self._get_hybrid(vectorstore, file_hash).retrieve(
-                    search_query, k=recall_k
-                )
+                docs = self._get_hybrid(vectorstore, file_hash).retrieve(search_query, k=recall_k)
                 if docs:
                     per_doc_hits.append(docs)
             except Exception as e:
@@ -177,8 +203,7 @@ class RagPipeline:
             "doc_total": len(file_hashes or []),
         }
 
-    def stream_answer(self, question: str, chat_history: List[BaseMessage],
-                      context: str):
+    def stream_answer(self, question: str, chat_history: list[BaseMessage], context: str):
         """
         流式生成答案（逐 token 产出），供 SSE 接口使用。
 
@@ -189,8 +214,7 @@ class RagPipeline:
         """
         return self._answer_gen.stream(question, chat_history, context)
 
-    def generate_answer(self, question: str, chat_history: List[BaseMessage],
-                        context: str) -> str:
+    def generate_answer(self, question: str, chat_history: list[BaseMessage], context: str) -> str:
         """
         一次性生成答案（与 stream_answer 配对）。
 

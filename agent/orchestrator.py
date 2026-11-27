@@ -6,27 +6,29 @@
   chat_stream()  逐 token 产出，供 SSE 接口
 
 意图判定是三级：强特征（寒暄/投诉）→ 文档特征词 → 都没命中才调模型。"""
+
 import os
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from concurrent.futures import ThreadPoolExecutor
-from typing import Any, Dict, List
-
 import re
+from concurrent.futures import ThreadPoolExecutor
+from typing import Any
 
 from langchain_community.chat_models import ChatTongyi
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 
-from config.setting import QaConfig
 from agent.intent import IntentRecognizer
 from agent.memory import Memory
-from querying.pipeline import RagPipeline
 from config.prompts import (
-    CHITCHAT_PROMPT, COMPLAINT_PROMPT,
+    CHITCHAT_PROMPT,
+    COMPLAINT_PROMPT,
 )
+from config.setting import QaConfig
+from querying.pipeline import RagPipeline
+
 
 class Agent:
     """
@@ -45,25 +47,25 @@ class Agent:
         # 业务分支专用：限制输出长度。
         # 实测 47 字的回答也要 9 秒，说明慢在模型响应而非 token 数；
         # 但限长能避免它越写越长（之前退款分支跑到 30 秒）。
-        self._business_llm = ChatTongyi(
-            model=self._config.chat_model, max_tokens=320
-        )
+        self._business_llm = ChatTongyi(model=self._config.chat_model, max_tokens=320)
 
         self._intent = IntentRecognizer(self._llm)
         self._rag = RagPipeline(config)
 
-        self._memories: Dict[str, Memory] = {}
+        self._memories: dict[str, Memory] = {}
         # session_id -> 已绑定的文档指纹列表（有顺序、去重）。
         # 从单值改成列表，是为了支持「一次会话传多份文档、跨文档提问」：
         # 每份 PDF 仍然各自一个 Chroma 集合，检索时逐份召回再按排名融合。
-        self._session_docs: Dict[str, List[str]] = {}
+        self._session_docs: dict[str, list[str]] = {}
 
         self._chitchat_chain = (
-            ChatPromptTemplate.from_messages([
-                ("system", CHITCHAT_PROMPT),
-                MessagesPlaceholder("chat_history"),
-                ("human", "{input}"),
-            ])
+            ChatPromptTemplate.from_messages(
+                [
+                    ("system", CHITCHAT_PROMPT),
+                    MessagesPlaceholder("chat_history"),
+                    ("human", "{input}"),
+                ]
+            )
             | self._llm
             | StrOutputParser()
         )
@@ -73,11 +75,13 @@ class Agent:
         self._business_chains = {}
         for name, system_prompt in self.BUSINESS_PROMPTS.items():
             self._business_chains[name] = (
-                ChatPromptTemplate.from_messages([
-                    ("system", system_prompt + "\n\n## 参考资料（可能为空）：\n{context}"),
-                    MessagesPlaceholder("chat_history"),
-                    ("human", "{input}"),
-                ])
+                ChatPromptTemplate.from_messages(
+                    [
+                        ("system", system_prompt + "\n\n## 参考资料（可能为空）：\n{context}"),
+                        MessagesPlaceholder("chat_history"),
+                        ("human", "{input}"),
+                    ]
+                )
                 | self._business_llm
                 | StrOutputParser()
             )
@@ -103,7 +107,7 @@ class Agent:
         """返回本次会话已绑定的文档指纹（单文档时为长度 1 的列表，未绑定为空列表）"""
         return list(self._session_docs.get(session_id, []))
 
-    def get_bound_documents(self, session_id: str) -> List[str]:
+    def get_bound_documents(self, session_id: str) -> list[str]:
         """语义更明确的别名，供接口层使用"""
         return self.get_bound_document(session_id)
 
@@ -113,29 +117,32 @@ class Agent:
 
     # ---------- 三个分支 ----------
     def _answer_chitchat(self, question: str, memory: Memory) -> str:
-        return self._chitchat_chain.invoke({
-            # 统一走 build_context：最近消息 + 摘要 + 关键事实
-            "chat_history": memory.build_context(self._config.history_limit),
-            "input": question,
-        })
+        return self._chitchat_chain.invoke(
+            {
+                # 统一走 build_context：最近消息 + 摘要 + 关键事实
+                "chat_history": memory.build_context(self._config.history_limit),
+                "input": question,
+            }
+        )
 
-    def _answer_with_prompt(self, intent: str, question: str,
-                            memory: Memory) -> Dict[str, Any]:
+    def _answer_with_prompt(self, intent: str, question: str, memory: Memory) -> dict[str, Any]:
         """
         业务分支（目前只有投诉）：纯对话，不查文档。
 
         投诉要的是「先接住情绪 + 记录转交」，不是给一堆制度条款，
         所以这里不做检索，直接用该分支的提示词生成。
         """
-        answer = self._business_chains[intent].invoke({
-            "context": "",
-            "chat_history": memory.build_context(self._config.history_limit),
-            "input": question,
-        })
+        answer = self._business_chains[intent].invoke(
+            {
+                "context": "",
+                "chat_history": memory.build_context(self._config.history_limit),
+                "input": question,
+            }
+        )
         return {"answer": answer, "evidence": [], "search_query": question}
 
     # ---------- 主入口 ----------
-    def prepare(self, session_id: str, question: str) -> Dict[str, Any]:
+    def prepare(self, session_id: str, question: str) -> dict[str, Any]:
         """
         「想清楚怎么答」这一步：判意图 → 取事实 → 选路由 → 检索证据。
 
@@ -152,9 +159,17 @@ class Agent:
         """
         question = (question or "").strip()
         if not question:
-            return {"kind": "answer", "answer": "请输入问题。", "intent": "",
-                    "confidence": 0.0, "route": "empty", "evidence": [],
-                    "search_query": "", "context": "", "session_id": session_id}
+            return {
+                "kind": "answer",
+                "answer": "请输入问题。",
+                "intent": "",
+                "confidence": 0.0,
+                "route": "empty",
+                "evidence": [],
+                "search_query": "",
+                "context": "",
+                "session_id": session_id,
+            }
 
         memory = self._get_memory(session_id)
         hist_msgs = memory.build_context(self._config.history_limit)
@@ -166,11 +181,18 @@ class Agent:
 
         # 闲聊走快通道：不查文档、不判槽位，直接交给对话链
         if quick == "chitchat":
-            return {"kind": "stream", "route": "chitchat", "intent": "chitchat",
-                    "confidence": 1.0, "evidence": [], "search_query": question,
-                    "context": "", "session_id": session_id}
+            return {
+                "kind": "stream",
+                "route": "chitchat",
+                "intent": "chitchat",
+                "confidence": 1.0,
+                "evidence": [],
+                "search_query": question,
+                "context": "",
+                "session_id": session_id,
+            }
 
-        slots: Dict[str, Any] = {}
+        slots: dict[str, Any] = {}
         if quick:
             # 规则命中：省掉一次模型调用（约 3 秒）
             intent, confidence = quick, 0.9
@@ -202,23 +224,30 @@ class Agent:
         memory.update_facts(facts)
 
         # ---- 路由 ----
-        base = {"intent": intent, "confidence": confidence,
-                "search_query": search_query, "session_id": session_id}
+        base = {
+            "intent": intent,
+            "confidence": confidence,
+            "search_query": search_query,
+            "session_id": session_id,
+        }
 
         if intent == "chitchat":
-            return {**base, "kind": "stream", "route": "chitchat",
-                    "evidence": [], "context": ""}
+            return {**base, "kind": "stream", "route": "chitchat", "evidence": [], "context": ""}
 
         if intent in self.BUSINESS_PROMPTS:
             # 投诉分支：只共情 + 记录，不查文档
-            return {**base, "kind": "stream", "route": intent,
-                    "evidence": [], "context": ""}
+            return {**base, "kind": "stream", "route": intent, "evidence": [], "context": ""}
 
         if not self._session_docs.get(session_id):
             # 该查文档但这个会话还没传文档
-            return {**base, "kind": "answer", "route": "no_doc", "evidence": [],
-                    "context": "",
-                    "answer": "这个问题需要查文档，但当前会话还没有绑定文档。请先上传一份 PDF。"}
+            return {
+                **base,
+                "kind": "answer",
+                "route": "no_doc",
+                "evidence": [],
+                "context": "",
+                "answer": "这个问题需要查文档，但当前会话还没有绑定文档。请先上传一份 PDF。",
+            }
 
         # ---- RAG：先检索（证据、上下文都在这一步拿到）----
         found = self._rag.retrieve_multi(
@@ -231,16 +260,25 @@ class Agent:
         )
         if not found["context"]:
             # 没有一条证据过阈值：不调模型，直接说没找到
-            return {**base, "kind": "answer", "route": "rag",
-                    "evidence": [], "context": "",
-                    "answer": "未找到相关资料。"}
+            return {
+                **base,
+                "kind": "answer",
+                "route": "rag",
+                "evidence": [],
+                "context": "",
+                "answer": "未找到相关资料。",
+            }
 
-        return {**base, "kind": "stream", "route": "rag",
-                "evidence": found["evidence"], "context": found["context"],
-                "search_query": found["search_query"]}
+        return {
+            **base,
+            "kind": "stream",
+            "route": "rag",
+            "evidence": found["evidence"],
+            "context": found["context"],
+            "search_query": found["search_query"],
+        }
 
-    def _stream_chain(self, plan: Dict[str, Any], question: str,
-                      memory: Memory):
+    def _stream_chain(self, plan: dict[str, Any], question: str, memory: Memory):
         """
         按 route 选一条链做流式生成。
 
@@ -251,16 +289,20 @@ class Agent:
                 question, memory.build_context(self._config.history_limit), plan["context"]
             )
         if plan["route"] == "chitchat":
-            return self._chitchat_chain.stream({
+            return self._chitchat_chain.stream(
+                {
+                    "chat_history": memory.build_context(self._config.history_limit),
+                    "input": question,
+                }
+            )
+        # 业务分支（投诉）
+        return self._business_chains[plan["route"]].stream(
+            {
+                "context": "",
                 "chat_history": memory.build_context(self._config.history_limit),
                 "input": question,
-            })
-        # 业务分支（投诉）
-        return self._business_chains[plan["route"]].stream({
-            "context": "",
-            "chat_history": memory.build_context(self._config.history_limit),
-            "input": question,
-        })
+            }
+        )
 
     def _remember(self, session_id: str, question: str, answer: str) -> None:
         """一轮问答结束后写回记忆（历史 + 触发摘要）"""
@@ -268,7 +310,7 @@ class Agent:
         memory.add_user(question, self._llm)
         memory.add_ai(answer or "", self._llm)
 
-    def chat(self, session_id: str, question: str) -> Dict[str, Any]:
+    def chat(self, session_id: str, question: str) -> dict[str, Any]:
         """一次性问答：走完 prepare() 后把整段答案取回来"""
         question = (question or "").strip()
         plan = self.prepare(session_id, question)
@@ -279,7 +321,8 @@ class Agent:
             memory = self._get_memory(session_id)
             if plan["route"] == "rag":
                 answer = self._rag.generate_answer(
-                    question, memory.build_context(self._config.history_limit),
+                    question,
+                    memory.build_context(self._config.history_limit),
                     plan["context"],
                 )
             elif plan["route"] == "chitchat":
@@ -313,14 +356,25 @@ class Agent:
         question = (question or "").strip()
         try:
             plan = self.prepare(session_id, question)
-            yield {"event": "meta", "intent": plan["intent"],
-                   "route": plan["route"], "confidence": plan["confidence"],
-                   "search_query": plan["search_query"]}
-            yield {"event": "evidence", "evidence": [
-                {"content": ev.content, "source": ev.source,
-                 "page": ev.page, "score": round(float(ev.score), 4)}
-                for ev in plan["evidence"]
-            ]}
+            yield {
+                "event": "meta",
+                "intent": plan["intent"],
+                "route": plan["route"],
+                "confidence": plan["confidence"],
+                "search_query": plan["search_query"],
+            }
+            yield {
+                "event": "evidence",
+                "evidence": [
+                    {
+                        "content": ev.content,
+                        "source": ev.source,
+                        "page": ev.page,
+                        "score": round(float(ev.score), 4),
+                    }
+                    for ev in plan["evidence"]
+                ],
+            }
 
             if plan["kind"] == "answer":
                 answer = plan["answer"]
@@ -340,9 +394,9 @@ class Agent:
             yield {"event": "done", "answer": answer}
         except Exception as e:
             import traceback
+
             traceback.print_exc()
             yield {"event": "error", "message": f"{type(e).__name__}: {e}"}
-
 
     # ---------- 业务分支 → 提示词 ----------
     # 「一个意图一块提示词」的落地位置：意图识别只负责分诊，
@@ -354,20 +408,62 @@ class Agent:
     }
 
     # ---------- 规则快判 ----------
-    CHITCHAT_WORDS = ("你好", "您好", "谢谢", "再见", "拜拜", "在吗", "你是谁",
-                      "你能做什么", "你能干什么", "哈喽", "早上好", "晚安")
+    CHITCHAT_WORDS = (
+        "你好",
+        "您好",
+        "谢谢",
+        "再见",
+        "拜拜",
+        "在吗",
+        "你是谁",
+        "你能做什么",
+        "你能干什么",
+        "哈喽",
+        "早上好",
+        "晚安",
+    )
 
     # 投诉类关键词（情绪优先，命中就分到投诉分支）
     BUSINESS_KEYWORDS = {
-        "complaint": ("投诉", "不满", "举报", "意见", "太麻烦", "太差", "什么破",
-                      "抱怨", "不合理", "很生气", "受不了"),
+        "complaint": (
+            "投诉",
+            "不满",
+            "举报",
+            "意见",
+            "太麻烦",
+            "太差",
+            "什么破",
+            "抱怨",
+            "不合理",
+            "很生气",
+            "受不了",
+        ),
     }
 
     # 文档问答的强特征词：命中就按 rag 处理，不必再调模型分诊
     # 覆盖两类：① 疑问词（什么/怎么/多少/几/谁/是否…）② 制度语境词（规定/流程/审批/条…）
-    RAG_HINTS = ("什么", "怎么", "如何", "多少", "多久", "几", "哪", "谁",
-                 "是否", "能不能", "可不可以", "有没有",
-                 "规定", "流程", "标准", "要求", "审批", "申请", "第", "条")
+    RAG_HINTS = (
+        "什么",
+        "怎么",
+        "如何",
+        "多少",
+        "多久",
+        "几",
+        "哪",
+        "谁",
+        "是否",
+        "能不能",
+        "可不可以",
+        "有没有",
+        "规定",
+        "流程",
+        "标准",
+        "要求",
+        "审批",
+        "申请",
+        "第",
+        "条",
+    )
 
     def _quick_intent(self, q: str):
         """
@@ -397,8 +493,20 @@ class Agent:
         # 判不出来 —— 交给模型
         return None
 
-    PRONOUNS = ("这个", "那个", "它", "上面", "刚才", "前面", "这条", "那条",
-                "该", "此", "上述", "其")
+    PRONOUNS = (
+        "这个",
+        "那个",
+        "它",
+        "上面",
+        "刚才",
+        "前面",
+        "这条",
+        "那条",
+        "该",
+        "此",
+        "上述",
+        "其",
+    )
 
     def _need_rewrite(self, q: str) -> bool:
         """含指代词才需要改写；本身完整的问题直接拿去检索"""
@@ -417,9 +525,9 @@ class Agent:
         ("doc_name", re.compile(r"[\u4e00-\u9fffA-Za-z0-9]+\.pdf")),
     )
 
-    def _extract_entities(self, q: str) -> Dict[str, Any]:
+    def _extract_entities(self, q: str) -> dict[str, Any]:
         """从问题里抽精确标识写进事实槽 —— 多轮追问时不用再问用户一遍"""
-        found: Dict[str, Any] = {}
+        found: dict[str, Any] = {}
         for name, pattern in self._ENTITY_PATTERNS:
             m = pattern.search(q or "")
             if m:

@@ -17,12 +17,12 @@
     ---
     # 正文（操作步骤 / 判断表 / 输出格式）
 """
+
 from __future__ import annotations
 
 import os
 import re
 from dataclasses import dataclass, field
-from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 
 _FM = re.compile(r"^---\s*\n(.*?)\n---\s*\n", re.S)
 _TOKEN = re.compile(r"[a-z0-9]+|[\u4e00-\u9fa5]{2,}")
@@ -33,14 +33,14 @@ class SkillMeta:
     name: str
     summary: str
     path: str
-    keywords: List[str] = field(default_factory=list)
+    keywords: list[str] = field(default_factory=list)
 
     def line(self) -> str:
         """给提示词的一行目录项 —— 越短越好。"""
         return f"- {self.name}：{self.summary}"
 
 
-def parse_front_matter(text: str) -> Tuple[Dict[str, str], str]:
+def parse_front_matter(text: str) -> tuple[dict[str, str], str]:
     """解析极简 front-matter（key: value），不引入 yaml 依赖。
 
     只支持单行值，够用；复杂结构（列表）用逗号分隔。
@@ -48,12 +48,12 @@ def parse_front_matter(text: str) -> Tuple[Dict[str, str], str]:
     m = _FM.match(text or "")
     if not m:
         return {}, text or ""
-    meta: Dict[str, str] = {}
+    meta: dict[str, str] = {}
     for line in m.group(1).splitlines():
         if ":" in line:
             key, value = line.split(":", 1)
             meta[key.strip().lower()] = value.strip()
-    return meta, text[m.end():]
+    return meta, text[m.end() :]
 
 
 def tokens(text: str) -> set:
@@ -64,11 +64,11 @@ def tokens(text: str) -> set:
 class SkillRegistry:
     def __init__(self, root: str) -> None:
         self.root = root
-        self._metas: Dict[str, SkillMeta] = {}
-        self._bodies: Dict[str, str] = {}
+        self._metas: dict[str, SkillMeta] = {}
+        self._bodies: dict[str, str] = {}
 
     # ---- 目录 ----
-    def index(self) -> List[SkillMeta]:
+    def index(self) -> list[SkillMeta]:
         """扫描目录，只读 front-matter，不读正文。"""
         self._metas.clear()
         if not os.path.isdir(self.root):
@@ -95,7 +95,7 @@ class SkillRegistry:
         return "可用技能（需要时再展开）：\n" + "\n".join(m.line() for m in self._metas.values())
 
     # ---- 匹配 ----
-    def match(self, query: str, top: int = 2) -> List[SkillMeta]:
+    def match(self, query: str, top: int = 2) -> list[SkillMeta]:
         """按关键词重合度排序，返回最相关的几个。
 
         为什么不用向量：技能数量少、描述短，关键词匹配足够且零成本；
@@ -104,7 +104,7 @@ class SkillRegistry:
         q = tokens(query)
         if not q:
             return []
-        scored: List[Tuple[float, SkillMeta]] = []
+        scored: list[tuple[float, SkillMeta]] = []
         for m in self._metas.values():
             kw = set()
             for k in m.keywords:
@@ -148,6 +148,5 @@ class SkillRegistry:
             parts.append(f"### 技能：{m.name}\n{self.load_body(m.name)}")
         return "\n\n".join(parts)
 
-    def stats(self) -> Dict[str, int]:
-        return {"skills": len(self._metas),
-                "loaded": len(self._bodies)}
+    def stats(self) -> dict[str, int]:
+        return {"skills": len(self._metas), "loaded": len(self._bodies)}

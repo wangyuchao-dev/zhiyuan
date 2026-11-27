@@ -9,22 +9,23 @@
 用法：
     python eval/compare.py 旧结果.json 新结果.json
 """
+
 from __future__ import annotations
 
 import json
 import os
 import sys
-from typing import Any, Dict, List, Tuple
+from typing import Any
 
 
-def load(path: str) -> Dict[str, Any]:
+def load(path: str) -> dict[str, Any]:
     with open(path, encoding="utf-8") as f:
         return json.load(f)
 
 
-def first_run(payload: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
+def first_run(payload: dict[str, Any]) -> dict[str, dict[str, Any]]:
     """每个用例只取第 1 次运行 —— 与 TSR 的口径保持一致。"""
-    out: Dict[str, Dict[str, Any]] = {}
+    out: dict[str, dict[str, Any]] = {}
     for r in payload.get("records", []):
         if int(r.get("run", 0)) != 0:
             continue
@@ -32,7 +33,7 @@ def first_run(payload: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
     return out
 
 
-def compare(prev: Dict[str, Any], curr: Dict[str, Any]) -> Dict[str, Any]:
+def compare(prev: dict[str, Any], curr: dict[str, Any]) -> dict[str, Any]:
     a, b = first_run(prev), first_run(curr)
     common = sorted(set(a) & set(b))
 
@@ -58,7 +59,7 @@ def compare(prev: Dict[str, Any], curr: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def to_markdown(c: Dict[str, Any], prev_name: str = "prev", curr_name: str = "curr") -> str:
+def to_markdown(c: dict[str, Any], prev_name: str = "prev", curr_name: str = "curr") -> str:
     def pct(x: float | None) -> str:
         return "—" if x is None else f"{x * 100:.1f}%"
 
@@ -79,7 +80,9 @@ def to_markdown(c: Dict[str, Any], prev_name: str = "prev", curr_name: str = "cu
     if c["regressions"]:
         lines.append(f"⚠️ 弄坏了：{', '.join(c['regressions'])}")
     if c["only_in_prev"] or c["only_in_curr"]:
-        lines.append(f"用例集不一致：仅旧版 {c['only_in_prev'] or '无'} / 仅新版 {c['only_in_curr'] or '无'}")
+        lines.append(
+            f"用例集不一致：仅旧版 {c['only_in_prev'] or '无'} / 仅新版 {c['only_in_curr'] or '无'}"
+        )
     return "\n".join(lines)
 
 

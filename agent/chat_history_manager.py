@@ -2,6 +2,7 @@
 
 存储落在 SQLite（agent/persistence.py），服务重启后历史仍在。
 和历史相对的是事实槽（FactManager）：历史是流水账，事实是当前值。"""
+
 import os
 import sys
 
@@ -11,9 +12,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 #
 # 存储位置：SQLite（agent/persistence.py），不再是进程内字典。
 # 这样服务重启后历史还在，多个 worker 之间也能看到同一份记忆。
-from typing import List
 
-from langchain_core.messages import BaseMessage, HumanMessage, AIMessage
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
 
 from agent.persistence import db
 
@@ -40,11 +40,11 @@ class ChatHistoryManager:
         # 其他类型（SystemMessage / ToolMessage）不进历史：
         # 系统注入的内容由 Memory.build_context 现拼，不需要落库。
 
-    def get_all_messages(self) -> List[BaseMessage]:
+    def get_all_messages(self) -> list[BaseMessage]:
         """获取当前会话全部消息（按时间顺序）"""
         return [_to_message(r, c) for r, c in db().get_messages(self.chat_session_id)]
 
-    def get_recent_messages(self, n: int) -> List[BaseMessage]:
+    def get_recent_messages(self, n: int) -> list[BaseMessage]:
         """
         获取当前会话最近 n 条消息
         n 比总数大 → 返回全部

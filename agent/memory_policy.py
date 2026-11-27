@@ -15,20 +15,21 @@
   3. **检索从紧**：宁可少带一条，也不放一条不确定的。事实类根本不用相似度，
      用相似度找"部门"会匹配到"部门经理"。
 """
+
 from __future__ import annotations
 
 import re
 import time
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
-from enum import Enum
-from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
+from enum import StrEnum
 
 _QUESTION = re.compile(r"(吗|呢|怎么|如何|什么|为什么|多少|哪[个些里]|\?|？)\s*$")
 _FILLER = {"嗯", "好的", "谢谢", "在吗", "你好", "收到", "ok", "嗯嗯", "哈哈哈"}
 _WORD = re.compile(r"[a-z0-9]+|[\u4e00-\u9fa5]{2,}")
 
 
-class Kind(str, Enum):
+class Kind(StrEnum):
     FACT = "fact"
     PREFERENCE = "preference"
     EPHEMERAL = "ephemeral"
@@ -42,10 +43,10 @@ class Item:
     value: str
     version: int = 1
     updated_at: float = field(default_factory=time.time)
-    ttl_s: Optional[float] = None        # None = 不过期（仅 FACT / PREFERENCE 可设）
+    ttl_s: float | None = None  # None = 不过期（仅 FACT / PREFERENCE 可设）
     source: str = ""
 
-    def expired(self, now: Optional[float] = None) -> bool:
+    def expired(self, now: float | None = None) -> bool:
         if self.ttl_s is None:
             return False
         return (now or time.time()) - self.updated_at > self.ttl_s
@@ -58,7 +59,7 @@ def tokens(text: str) -> set:
     out = set(re.findall(r"[a-z0-9]+", t))
     for seg in re.findall(r"[\u4e00-\u9fa5]+", t):
         out.add(seg)
-        out.update(seg[i:i + 2] for i in range(len(seg) - 1))
+        out.update(seg[i : i + 2] for i in range(len(seg) - 1))
     return out
 
 
@@ -68,17 +69,22 @@ class MemoryPolicy:
     这样拆的好处：策略可以单测（不依赖 SQLite），换存储也不影响规则。
     """
 
-    def __init__(self, max_value_len: int = 200, search_min_overlap: float = 0.3,
-                 search_max_items: int = 1, ephemeral_ttl: float = 600,
-                 search_min_hits: int = 2) -> None:
+    def __init__(
+        self,
+        max_value_len: int = 200,
+        search_min_overlap: float = 0.3,
+        search_max_items: int = 1,
+        ephemeral_ttl: float = 600,
+        search_min_hits: int = 2,
+    ) -> None:
         self.max_value_len = max_value_len
-        self.search_min_overlap = search_min_overlap   # 覆盖率门槛
-        self.search_min_hits = search_min_hits         # 至少 2 个共同词才算命中
-        self.search_max_items = search_max_items       # 默认只放一条
+        self.search_min_overlap = search_min_overlap  # 覆盖率门槛
+        self.search_min_hits = search_min_hits  # 至少 2 个共同词才算命中
+        self.search_max_items = search_max_items  # 默认只放一条
         self.ephemeral_ttl = ephemeral_ttl
 
     # ---- 写入门槛 ----
-    def should_write(self, kind: Kind, text: str) -> Tuple[bool, str]:
+    def should_write(self, kind: Kind, text: str) -> tuple[bool, str]:
         """返回 (能不能写, 原因)。原因会进日志，方便回查"为什么没记住"。"""
         text = (text or "").strip()
         if not text:
@@ -86,16 +92,16 @@ class MemoryPolicy:
         if text.lower() in _FILLER:
             return False, "filler"
         if _QUESTION.search(text):
-            return False, "question"            # 提问不是事实，写进去会污染检索
+            return False, "question"  # 提问不是事实，写进去会污染检索
         if len(text) > self.max_value_len:
-            return False, "too_long"            # 长文本该进摘要，不该进事实库
+            return False, "too_long"  # 长文本该进摘要，不该进事实库
         if kind is Kind.EPHEMERAL:
             # 临时状态只在会话里用；真写库也要带 TTL，否则三天后还在影响回答
             return True, "ephemeral_ttl"
         return True, "ok"
 
     # ---- 写入 ----
-    def upsert(self, store: Dict[str, Item], item: Item) -> Tuple[Item, bool]:
+    def upsert(self, store: dict[str, Item], item: Item) -> tuple[Item, bool]:
         """同 key 覆盖：值没变就不写，变了 version+1。返回 (最终项, 是否真的写了)。"""
         ok, reason = self.should_write(item.kind, item.value)
         if item.kind is not Kind.EPHEMERAL and not ok:
@@ -104,7 +110,7 @@ class MemoryPolicy:
         old = store.get(item.key)
         if old is not None:
             if old.value == item.value and old.kind is item.kind:
-                return old, False               # 幂等：重复说同一件事不该涨版本
+                return old, False  # 幂等：重复说同一件事不该涨版本
             item.version = old.version + 1
             item.updated_at = time.time()
         if item.kind is Kind.EPHEMERAL and item.ttl_s is None:
@@ -113,7 +119,7 @@ class MemoryPolicy:
         return item, True
 
     # ---- 读取 ----
-    def get(self, store: Dict[str, Item], key: str) -> Optional[Item]:
+    def get(self, store: dict[str, Item], key: str) -> Item | None:
         """事实类只按 key 取。不要"相似 key 兜底"——那是最容易串味的地方。"""
         item = store.get(key)
         if item and item.expired():
@@ -121,10 +127,14 @@ class MemoryPolicy:
             return None
         return item
 
-    def search(self, store: Dict[str, Item], query: str,
-               kinds: Sequence[Kind] = (Kind.PREFERENCE,),
-               min_overlap: Optional[float] = None,
-               max_items: Optional[int] = None) -> List[Item]:
+    def search(
+        self,
+        store: dict[str, Item],
+        query: str,
+        kinds: Sequence[Kind] = (Kind.PREFERENCE,),
+        min_overlap: float | None = None,
+        max_items: int | None = None,
+    ) -> list[Item]:
         """只在允许的类型里做关键词匹配，门槛默认 0.6、最多 1 条。
 
         为什么门槛这么高：偏好类误召回会直接改变回答风格（把"简短"当成"详细"），
@@ -135,7 +145,7 @@ class MemoryPolicy:
             return []
         need = self.search_min_overlap if min_overlap is None else min_overlap
         limit = self.search_max_items if max_items is None else max_items
-        scored: List[Tuple[float, Item]] = []
+        scored: list[tuple[float, Item]] = []
         for item in store.values():
             if item.kind not in kinds or item.expired():
                 continue
@@ -143,7 +153,7 @@ class MemoryPolicy:
             if not t:
                 continue
             shared = q & t
-            if len(shared) < self.search_min_hits:      # 只共用一个词，误召回风险太高
+            if len(shared) < self.search_min_hits:  # 只共用一个词，误召回风险太高
                 continue
             score = len(shared) / max(1, min(len(q), len(t)))
             if score >= need:
@@ -152,12 +162,12 @@ class MemoryPolicy:
         return [i for _, i in scored[:limit]]
 
     # ---- 维护 ----
-    def purge_expired(self, store: Dict[str, Item], now: Optional[float] = None) -> int:
+    def purge_expired(self, store: dict[str, Item], now: float | None = None) -> int:
         dead = [k for k, v in store.items() if v.expired(now)]
         for k in dead:
             store.pop(k, None)
         return len(dead)
 
-    def prompt_lines(self, items: Iterable[Item]) -> List[str]:
+    def prompt_lines(self, items: Iterable[Item]) -> list[str]:
         """给提示词用的短行：`- key: value`，不带版本号（版本是给排查用的）。"""
         return [f"- {i.key}：{i.value}" for i in items]

@@ -2,6 +2,7 @@
 
 滚动压缩而不是全量重压；按阈值触发（见 Memory.SUMMARY_TRIGGER），
 因为每压一次就是一次完整的模型调用。摘要落 SQLite。"""
+
 import os
 import sys
 
@@ -11,15 +12,14 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 #
 # 存储位置：SQLite（agent/persistence.py）。每会话只保留一条最新摘要，
 # 采用「滚动压缩」：旧摘要 + 新消息 → 新摘要，长度不随轮次增长。
-from typing import List
 
 from langchain_community.chat_models import ChatTongyi
-from langchain_core.messages import BaseMessage, HumanMessage, AIMessage
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate
-from config.prompts import SUMMARY_PROMPT
 
 from agent.persistence import db
+from config.prompts import SUMMARY_PROMPT
 
 str_output_parser = StrOutputParser()
 
@@ -40,10 +40,7 @@ class SummaryManager:
         db().set_summary(self.chat_session_id, summary or "")
 
     def generate_incremental_summary(
-        self,
-        old_summary: str,
-        new_messages: List[BaseMessage],
-        llm: ChatTongyi
+        self, old_summary: str, new_messages: list[BaseMessage], llm: ChatTongyi
     ) -> str:
         """
         生成增量摘要，依赖传入大模型。
@@ -62,10 +59,12 @@ class SummaryManager:
             elif isinstance(msg, AIMessage):
                 messages_text += f"ai: {msg.content}\n"
 
-        summary_prompt = ChatPromptTemplate.from_messages([
-            ("system", SUMMARY_PROMPT),
-            ("human", f"旧摘要：{old_summary}\n新消息：{messages_text}")
-        ])
+        summary_prompt = ChatPromptTemplate.from_messages(
+            [
+                ("system", SUMMARY_PROMPT),
+                ("human", f"旧摘要：{old_summary}\n新消息：{messages_text}"),
+            ]
+        )
         chain = summary_prompt | llm | str_output_parser
         result = chain.invoke(input={})
         new_summary = result.strip()

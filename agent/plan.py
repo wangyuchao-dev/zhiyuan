@@ -9,11 +9,13 @@
 
     Plan 对象本身可打印、可断言 —— 测试里可以直接验证「闲聊不该走检索」。
 """
+
 from __future__ import annotations
 
 import time
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, List, Optional, Sequence
+from typing import Any
 
 try:
     from core.errors import ErrorKind, ToolError, classify, next_delay
@@ -24,10 +26,10 @@ except ImportError:  # pragma: no cover
 @dataclass
 class Step:
     name: str
-    kind: str = "workflow"          # workflow（确定性） / agent（模型决定）
-    required: bool = True           # 失败是否中断整条链路
+    kind: str = "workflow"  # workflow（确定性） / agent（模型决定）
+    required: bool = True  # 失败是否中断整条链路
     timeout_ms: int = 8000
-    max_attempts: int = 1           # 1 = 不重试
+    max_attempts: int = 1  # 1 = 不重试
 
     def allow_retry(self) -> bool:
         return self.max_attempts > 1
@@ -35,11 +37,11 @@ class Step:
 
 @dataclass
 class Plan:
-    route: str                      # rag / chitchat / complaint / error
-    steps: List[Step] = field(default_factory=list)
+    route: str  # rag / chitchat / complaint / error
+    steps: list[Step] = field(default_factory=list)
     note: str = ""
 
-    def step_names(self) -> List[str]:
+    def step_names(self) -> list[str]:
         return [s.name for s in self.steps]
 
     def __str__(self) -> str:
@@ -51,19 +53,19 @@ class StepResult:
     name: str
     ok: bool
     value: Any = None
-    error: Optional[ToolError] = None
+    error: ToolError | None = None
     attempts: int = 1
     elapsed_ms: float = 0.0
-    degraded: bool = False          # 可选步骤失败但被跳过
+    degraded: bool = False  # 可选步骤失败但被跳过
 
 
 @dataclass
 class ExecResult:
     ok: bool
-    outputs: Dict[str, Any] = field(default_factory=dict)
-    trace: List[Dict[str, Any]] = field(default_factory=list)
+    outputs: dict[str, Any] = field(default_factory=dict)
+    trace: list[dict[str, Any]] = field(default_factory=list)
     failed_step: str = ""
-    error: Optional[ToolError] = None
+    error: ToolError | None = None
 
 
 def build_plan(intent: str, need_rewrite: bool, has_documents: bool) -> Plan:
@@ -74,14 +76,20 @@ def build_plan(intent: str, need_rewrite: bool, has_documents: bool) -> Plan:
     · 没绑定文档：直接给「先上传文档」，连检索都不发起。
     """
     if intent in ("chitchat", "complaint"):
-        return Plan(intent, [Step("compose", kind="agent", max_attempts=2)],
-                    note="闲聊/投诉不检索，避免用制度条款回应情绪")
+        return Plan(
+            intent,
+            [Step("compose", kind="agent", max_attempts=2)],
+            note="闲聊/投诉不检索，避免用制度条款回应情绪",
+        )
 
     if not has_documents:
-        return Plan("error", [Step("compose_no_doc", kind="agent", required=False)],
-                    note="没有可用文档，直接提示上传")
+        return Plan(
+            "error",
+            [Step("compose_no_doc", kind="agent", required=False)],
+            note="没有可用文档，直接提示上传",
+        )
 
-    steps: List[Step] = []
+    steps: list[Step] = []
     if need_rewrite:
         # 改写是可选的：失败就退回原问题继续检索（degraded=True）
         steps.append(Step("rewrite", required=False, max_attempts=1))
@@ -93,9 +101,12 @@ def build_plan(intent: str, need_rewrite: bool, has_documents: bool) -> Plan:
     return Plan("rag", steps, note="检索是主干；改写与精排失败可降级")
 
 
-def execute(plan: Plan, handlers: Dict[str, Callable[[Dict[str, Any]], Any]],
-            ctx: Optional[Dict[str, Any]] = None,
-            sleep: Callable[[float], None] = time.sleep) -> ExecResult:
+def execute(
+    plan: Plan,
+    handlers: dict[str, Callable[[dict[str, Any]], Any]],
+    ctx: dict[str, Any] | None = None,
+    sleep: Callable[[float], None] = time.sleep,
+) -> ExecResult:
     """按计划执行，单步内有界重试。
 
     约定：handler 签名 `(ctx) -> value`，抛异常表示失败；
@@ -124,18 +135,29 @@ def execute(plan: Plan, handlers: Dict[str, Callable[[Dict[str, Any]], Any]],
                 value = handler({**ctx, "attempt": attempts, "step": step.name})
                 ctx[step.name] = value
                 result.outputs[step.name] = value
-                result.trace.append({"step": step.name, "attempt": attempts,
-                                     "status": "ok",
-                                     "elapsed_ms": round((time.perf_counter() - t0) * 1000, 1)})
+                result.trace.append(
+                    {
+                        "step": step.name,
+                        "attempt": attempts,
+                        "status": "ok",
+                        "elapsed_ms": round((time.perf_counter() - t0) * 1000, 1),
+                    }
+                )
                 err = None
                 break
             except Exception as exc:
                 err = exc if isinstance(exc, ToolError) else classify(exc)
                 delay = next_delay(err, attempts)
-                result.trace.append({"step": step.name, "attempt": attempts,
-                                     "status": "error", "kind": err.kind.value,
-                                     "code": err.code,
-                                     "elapsed_ms": round((time.perf_counter() - t0) * 1000, 1)})
+                result.trace.append(
+                    {
+                        "step": step.name,
+                        "attempt": attempts,
+                        "status": "error",
+                        "kind": err.kind.value,
+                        "code": err.code,
+                        "elapsed_ms": round((time.perf_counter() - t0) * 1000, 1),
+                    }
+                )
                 if delay is None:
                     break
                 sleep(delay)
@@ -147,20 +169,23 @@ def execute(plan: Plan, handlers: Dict[str, Callable[[Dict[str, Any]], Any]],
                 result.error = err
                 break
             # 可选步骤：跳过并标记降级（改写失败 → 用原问题检索）
-            result.trace.append({"step": step.name, "status": "degraded",
-                                 "code": err.code})
+            result.trace.append({"step": step.name, "status": "degraded", "code": err.code})
             result.outputs.setdefault(step.name + "_degraded", True)
 
-    result.trace.append({"step": "_total", "status": "ok" if result.ok else "error",
-                         "elapsed_ms": round((time.perf_counter() - t_all) * 1000, 1)})
+    result.trace.append(
+        {
+            "step": "_total",
+            "status": "ok" if result.ok else "error",
+            "elapsed_ms": round((time.perf_counter() - t_all) * 1000, 1),
+        }
+    )
     return result
 
 
-def summarize_trace(trace: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
+def summarize_trace(trace: Sequence[dict[str, Any]]) -> dict[str, Any]:
     """给评测和日志用：重试了几次、哪步降级了、总耗时。"""
     retries = sum(1 for t in trace if t.get("attempt", 1) > 1)
     degraded = [t["step"] for t in trace if t.get("status") == "degraded"]
     errors = [t for t in trace if t.get("status") == "error"]
     total = next((t["elapsed_ms"] for t in reversed(trace) if t["step"] == "_total"), 0)
-    return {"retries": retries, "degraded": degraded,
-            "errors": len(errors), "total_ms": total}
+    return {"retries": retries, "degraded": degraded, "errors": len(errors), "total_ms": total}

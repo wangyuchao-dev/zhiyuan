@@ -11,14 +11,16 @@
   2. **空结果与异常不缓存** —— 一次抖动不能污染接下来半小时；
   3. **连不上 Redis 也要能用** —— 降级成本地缓存，行为不变（只是不跨进程）。
 """
+
 from __future__ import annotations
 
 import hashlib
 import json
 import threading
 import time
-from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, Optional, Tuple
+from collections.abc import Callable
+from dataclasses import dataclass
+from typing import Any
 
 # 版本号进 key：改了序列化格式或 key 结构时，旧缓存自然失效
 SCHEMA_VERSION = "v1"
@@ -35,19 +37,23 @@ class CacheStats:
         total = self.hit + self.miss
         return self.hit / total if total else 0.0
 
-    def as_dict(self) -> Dict[str, Any]:
-        return {"hit": self.hit, "miss": self.miss, "errors": self.errors,
-                "hit_rate": round(self.hit_rate, 3)}
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "hit": self.hit,
+            "miss": self.miss,
+            "errors": self.errors,
+            "hit_rate": round(self.hit_rate, 3),
+        }
 
 
 class MemoryCacheBackend:
     """进程内缓存：带 TTL、线程安全。降级用，也可单独跑测试。"""
 
     def __init__(self) -> None:
-        self._data: Dict[str, Tuple[float, str]] = {}
+        self._data: dict[str, tuple[float, str]] = {}
         self._lock = threading.Lock()
 
-    def get(self, key: str) -> Optional[str]:
+    def get(self, key: str) -> str | None:
         with self._lock:
             item = self._data.get(key)
             if not item:
@@ -88,12 +94,13 @@ class RedisCacheBackend:
 
     def __init__(self, url: str, timeout: float = 1.0) -> None:
         import redis  # noqa: WPS433  （延迟导入是刻意的）
-        self._client = redis.Redis.from_url(url, socket_timeout=timeout,
-                                            socket_connect_timeout=timeout,
-                                            decode_responses=True)
-        self._client.ping()          # 连不上直接抛，由 build_cache 兜住
 
-    def get(self, key: str) -> Optional[str]:
+        self._client = redis.Redis.from_url(
+            url, socket_timeout=timeout, socket_connect_timeout=timeout, decode_responses=True
+        )
+        self._client.ping()  # 连不上直接抛，由 build_cache 兜住
+
+    def get(self, key: str) -> str | None:
         return self._client.get(key)
 
     def set(self, key: str, value: str, ttl: int) -> None:
@@ -122,8 +129,13 @@ def corpus_fingerprint(file_hashes: list[str]) -> str:
 class Cache:
     """对外只有一个门面：拼 key、读写、统计、空值不缓存。"""
 
-    def __init__(self, backend: Any, namespace: str = "zy",
-                 ttl_default: int = 1800, cache_empty: bool = False) -> None:
+    def __init__(
+        self,
+        backend: Any,
+        namespace: str = "zy",
+        ttl_default: int = 1800,
+        cache_empty: bool = False,
+    ) -> None:
         self.backend = backend
         self.namespace = namespace
         self.ttl_default = ttl_default
@@ -131,8 +143,9 @@ class Cache:
         self.stats = CacheStats()
 
     # ---- key ----
-    def build_key(self, kind: str, query: str, *, corpus_fp: str = "",
-                  params: Optional[Dict[str, Any]] = None) -> str:
+    def build_key(
+        self, kind: str, query: str, *, corpus_fp: str = "", params: dict[str, Any] | None = None
+    ) -> str:
         """key 结构：`ns:v1:kind:params哈希:语料指纹:query哈希`
 
         为什么 query 取哈希而不是原文：中文 key 在 Redis 里可读性差、长度不可控，
@@ -157,16 +170,17 @@ class Cache:
             self.stats.miss += 1
             return None
 
-    def set_json(self, key: str, value: Any, ttl: Optional[int] = None) -> None:
+    def set_json(self, key: str, value: Any, ttl: int | None = None) -> None:
         if value in (None, [], {}, "") and not self.cache_empty:
-            return                      # 空结果不缓存：一次抖动不能污染半小时
+            return  # 空结果不缓存：一次抖动不能污染半小时
         try:
             self.backend.set(key, json.dumps(value, ensure_ascii=False), ttl or self.ttl_default)
         except Exception:
             self.stats.errors += 1
 
-    def get_or_set(self, key: str, producer: Callable[[], Any],
-                   ttl: Optional[int] = None) -> Tuple[Any, bool]:
+    def get_or_set(
+        self, key: str, producer: Callable[[], Any], ttl: int | None = None
+    ) -> tuple[Any, bool]:
         """返回 (值, 是否命中)。producer 抛异常时不写缓存。"""
         cached = self.get_json(key)
         if cached is not None:
@@ -183,7 +197,7 @@ class Cache:
             return 0
 
     # ---- 容错 ----
-    def _safe_get(self, key: str) -> Optional[str]:
+    def _safe_get(self, key: str) -> str | None:
         try:
             return self.backend.get(key)
         except Exception:
@@ -197,11 +211,11 @@ class Cache:
             self.stats.errors += 1
 
 
-def build_cache(url: Optional[str], namespace: str = "zy") -> Cache:
+def build_cache(url: str | None, namespace: str = "zy") -> Cache:
     """按配置构造：给了 url 且连得上用 Redis，否则本地缓存。绝不因此起不来。"""
     if url:
         try:
             return Cache(RedisCacheBackend(url), namespace=namespace)
-        except Exception as exc:      # 没装 redis / 连不上 / 超时
+        except Exception as exc:  # 没装 redis / 连不上 / 超时
             print(f"[cache] Redis 不可用（{type(exc).__name__}），降级为进程内缓存")
     return Cache(MemoryCacheBackend(), namespace=namespace)

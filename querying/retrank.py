@@ -3,6 +3,7 @@
 QaConfig.min_score 在这里生效：低于阈值的片段直接丢弃 ——
 宁可变空让模型说「未找到」，也不把无关内容硬塞进上下文。
 精排接口异常时降级为按召回顺序返回，不让整个问答失败。"""
+
 import os
 import sys
 
@@ -11,7 +12,6 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from dataclasses import dataclass
-from typing import List, Tuple, Optional
 
 import dashscope
 from langchain_core.documents import Document
@@ -22,10 +22,11 @@ from config.setting import QaConfig
 @dataclass
 class RetrievedEvidence:
     """检索到的证据片段（经过重排序后输出的结构化信息）"""
-    content: str # 证据内容
-    source: str # 证据来源
-    page: Optional[int] # 证据所在页码（0-based）
-    score: float # 证据相关性分数
+
+    content: str  # 证据内容
+    source: str  # 证据来源
+    page: int | None  # 证据所在页码（0-based）
+    score: float  # 证据相关性分数
 
 
 class RerankPipeline:
@@ -37,10 +38,9 @@ class RerankPipeline:
         self.__config = config
         self.__model = model or config.rerank_model
 
-    def rerank(self,
-               query: str,
-               recalled_docs: List[Document],
-               final_top_n: int = 4) -> Tuple[List[RetrievedEvidence], str]:
+    def rerank(
+        self, query: str, recalled_docs: list[Document], final_top_n: int = 4
+    ) -> tuple[list[RetrievedEvidence], str]:
         """
         重排序流程入口
 
@@ -80,9 +80,11 @@ class RerankPipeline:
 
         # 注意：res["index"] 是相对 documents（也就是 pre_docs）的下标，
         # 不能用 recalled_docs 取 —— 一旦预过滤剔掉了文档，下标就全错位了
-        ranked = [(pre_docs[res["index"]], res.get("relevance_score"))
-                  for res in results
-                  if res.get("index") is not None and res["index"] < len(pre_docs)]
+        ranked = [
+            (pre_docs[res["index"]], res.get("relevance_score"))
+            for res in results
+            if res.get("index") is not None and res["index"] < len(pre_docs)
+        ]
 
         # 3. 阈值过滤 + 截断
         min_score = getattr(self.__config, "min_score", 0.0)
@@ -102,7 +104,7 @@ class RerankPipeline:
                 content=doc.page_content,
                 source=meta.get("source", "Unknown"),
                 page=meta.get("page"),
-                score=float(score) if score is not None else 0.0
+                score=float(score) if score is not None else 0.0,
             )
             evidence_list.append(ev)
             if ev.content:
@@ -112,7 +114,9 @@ class RerankPipeline:
 
         return evidence_list, context
 
-    def __filter(self, docs: List[Document], min_len: int = 40, max_len: int = 2000) -> List[Document]:
+    def __filter(
+        self, docs: list[Document], min_len: int = 40, max_len: int = 2000
+    ) -> list[Document]:
         """过滤掉太短/太长的片段，再按内容去重"""
         filtered = []
         for doc in docs:

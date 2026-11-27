@@ -14,21 +14,23 @@
     · ANNOTATE：引用编号越界 → 重新编号到真实证据，并在末尾标「出处已校正」；
     · PASS：没问题。
 """
+
 from __future__ import annotations
 
 import re
+from collections.abc import Sequence
 from dataclasses import dataclass, field
-from enum import Enum
-from typing import Any, Dict, List, Sequence, Tuple
+from enum import StrEnum
+from typing import Any
 
-_CODE = re.compile(r"\b([A-Z]{1,4}\d{2,6})\b")            # E1017 / HTTP500 / AL2026
+_CODE = re.compile(r"\b([A-Z]{1,4}\d{2,6})\b")  # E1017 / HTTP500 / AL2026
 _NUM = re.compile(r"\d+(?:\.\d+)?")
 _DATE = re.compile(r"(20\d{2})[-/年](\d{1,2})[-/月](\d{1,2})")
 _CITE = re.compile(r"\[(\d{1,2})\]")
 _UNIT_NUM = re.compile(r"(\d+(?:\.\d+)?)\s*(分钟|小时|天|秒|MB|GB|厘米|米)")
 
 
-class Severity(str, Enum):
+class Severity(StrEnum):
     BLOCK = "block"
     ANNOTATE = "annotate"
     PASS = "pass"
@@ -36,7 +38,7 @@ class Severity(str, Enum):
 
 @dataclass
 class Violation:
-    kind: str                  # code / number / date / citation
+    kind: str  # code / number / date / citation
     detail: str
     severity: Severity
 
@@ -45,52 +47,57 @@ class Violation:
 class CheckReport:
     ok: bool = True
     action: Severity = Severity.PASS
-    violations: List[Violation] = field(default_factory=list)
-    answer: str = ""           # 校正后的答案（可能等于原答案）
-    notes: List[str] = field(default_factory=list)
+    violations: list[Violation] = field(default_factory=list)
+    answer: str = ""  # 校正后的答案（可能等于原答案）
+    notes: list[str] = field(default_factory=list)
 
-    def as_dict(self) -> Dict[str, Any]:
-        return {"ok": self.ok, "action": self.action.value,
-                "violations": [{"kind": v.kind, "detail": v.detail,
-                                "severity": v.severity.value} for v in self.violations],
-                "notes": self.notes}
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "ok": self.ok,
+            "action": self.action.value,
+            "violations": [
+                {"kind": v.kind, "detail": v.detail, "severity": v.severity.value}
+                for v in self.violations
+            ],
+            "notes": self.notes,
+        }
 
 
 def _norm(text: str) -> str:
     return re.sub(r"\s+", "", (text or "")).upper()
 
 
-def check_codes(answer: str, evidence: Sequence[str]) -> List[Violation]:
+def check_codes(answer: str, evidence: Sequence[str]) -> list[Violation]:
     """答案里的「类错误码」必须出现在证据里。
 
     只查形如 E1017 的强特征 —— 纯数字太容易误报（年份、金额、页码都像）。
     """
     pool = _norm(" ".join(evidence))
-    out: List[Violation] = []
+    out: list[Violation] = []
     for code in set(_CODE.findall(answer or "")):
         if _norm(code) not in pool:
             out.append(Violation("code", code, Severity.BLOCK))
     return out
 
 
-def check_unit_numbers(answer: str, evidence: Sequence[str]) -> List[Violation]:
+def check_unit_numbers(answer: str, evidence: Sequence[str]) -> list[Violation]:
     """带单位的数字（5 分钟 / 50 MB / 90 秒）必须能在证据里找到。
 
     为什么只查带单位的：裸数字误报太多（「第 1 条」「2026 年」）。
     带单位的数字一旦漂移，业务含义就变了（50MB 写成 500MB 会直接误导）。
     """
     pool = _norm(" ".join(evidence))
-    out: List[Violation] = []
+    out: list[Violation] = []
     for value, unit in set(_UNIT_NUM.findall(answer or "")):
         if _norm(value + unit) not in pool:
             out.append(Violation("number", f"{value}{unit}", Severity.BLOCK))
     return out
 
 
-def check_dates(answer: str, evidence: Sequence[str]) -> List[Violation]:
+def check_dates(answer: str, evidence: Sequence[str]) -> list[Violation]:
     """日期必须与证据一致（只比对年月日三段，不管写法）。"""
     pool = _norm(" ".join(evidence))
-    out: List[Violation] = []
+    out: list[Violation] = []
     for y, m, d in set(_DATE.findall(answer or "")):
         token = f"{y}{int(m)}{int(d)}"
         if token not in pool and f"{y}{m}{d}" not in pool:
@@ -98,19 +105,21 @@ def check_dates(answer: str, evidence: Sequence[str]) -> List[Violation]:
     return out
 
 
-def check_citations(answer: str, evidence_count: int) -> List[Violation]:
+def check_citations(answer: str, evidence_count: int) -> list[Violation]:
     """引用编号不能越界：答案写 [5]，但实际只有 3 条证据。"""
-    out: List[Violation] = []
-    for idx in set(int(n) for n in _CITE.findall(answer or "")):
+    out: list[Violation] = []
+    for idx in {int(n) for n in _CITE.findall(answer or "")}:
         if idx < 1 or idx > max(evidence_count, 0):
-            out.append(Violation("citation", f"[{idx}] 超出证据数 {evidence_count}",
-                                 Severity.ANNOTATE))
+            out.append(
+                Violation("citation", f"[{idx}] 超出证据数 {evidence_count}", Severity.ANNOTATE)
+            )
     return out
 
 
 def renumber_citations(answer: str, evidence_count: int) -> str:
     """把越界的引用去掉，而不是全篇重排 —— 重排可能把引用指错。"""
-    def repl(m: "re.Match[str]") -> str:
+
+    def repl(m: re.Match[str]) -> str:
         idx = int(m.group(1))
         return m.group(0) if 1 <= idx <= evidence_count else ""
 
@@ -118,9 +127,12 @@ def renumber_citations(answer: str, evidence_count: int) -> str:
     return re.sub(r"[ \t]{2,}", " ", cleaned).strip()
 
 
-def postcheck(answer: str, evidence: Sequence[str],
-              evidence_count: int | None = None,
-              conservative_reply: str = "知识库中没有找到能支撑该结论的内容，我不做推测。") -> CheckReport:
+def postcheck(
+    answer: str,
+    evidence: Sequence[str],
+    evidence_count: int | None = None,
+    conservative_reply: str = "知识库中没有找到能支撑该结论的内容，我不做推测。",
+) -> CheckReport:
     """一次跑完四类校验，返回处置建议。
 
     注意：**不做「自动改写数字」**。把 15 分钟改回 5 分钟看起来聪明，
@@ -129,7 +141,7 @@ def postcheck(answer: str, evidence: Sequence[str],
     evidence = [e for e in (evidence or []) if e]
     count = len(evidence) if evidence_count is None else evidence_count
 
-    violations: List[Violation] = []
+    violations: list[Violation] = []
     violations += check_codes(answer, evidence)
     violations += check_unit_numbers(answer, evidence)
     violations += check_dates(answer, evidence)
@@ -153,11 +165,11 @@ def postcheck(answer: str, evidence: Sequence[str],
     return report
 
 
-def summarize(reports: Sequence[CheckReport]) -> Dict[str, Any]:
+def summarize(reports: Sequence[CheckReport]) -> dict[str, Any]:
     """给评测/日志用：拦截率与主要问题类型分布。"""
     if not reports:
         return {"calls": 0, "blocked": 0, "annotated": 0, "by_kind": {}}
-    by_kind: Dict[str, int] = {}
+    by_kind: dict[str, int] = {}
     for r in reports:
         for v in r.violations:
             by_kind[v.kind] = by_kind.get(v.kind, 0) + 1

@@ -7,6 +7,7 @@
 输出：eval/results/<suite>-<adapter>-<variant>-<时间戳>.json
 每次运行都记录「原始记录」，判定在 report.py 里做 —— 这样同一份结果可以换口径重算。
 """
+
 from __future__ import annotations
 
 import argparse
@@ -14,7 +15,6 @@ import json
 import os
 import sys
 import time
-from typing import Dict, List
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
@@ -30,7 +30,7 @@ SUITES = {
 }
 
 
-def load(path: str) -> List[Dict]:
+def load(path: str) -> list[dict]:
     rows = []
     with open(path, encoding="utf-8") as f:
         for line in f:
@@ -50,15 +50,16 @@ def main() -> None:
     ap.add_argument("--out", default=os.path.join(HERE, "results"))
     args = ap.parse_args()
 
-    adapter = (MockAdapter(args.variant) if args.adapter == "mock"
-               else LiveAdapter(document_hash=args.doc))
+    adapter = (
+        MockAdapter(args.variant) if args.adapter == "mock" else LiveAdapter(document_hash=args.doc)
+    )
 
-    cases: List[Dict] = []
+    cases: list[dict] = []
     for name, path in SUITES.items():
         if args.suite in ("all", name):
             cases.extend(load(os.path.join(HERE, path)))
 
-    records: List[Dict] = []
+    records: list[dict] = []
     t0 = time.time()
     for case in cases:
         for run in range(args.runs):
@@ -77,7 +78,9 @@ def main() -> None:
                 rec["ok"] = rec["ok"] and rec["grounding"] >= 0.5
             # 故障用例：判「有没有降级得体面」，而不是判内容对不对
             if case.get("suite") == "fault":
-                graceful = any(m in rec["answer"] for m in ("不可用", "无响应", "没有找到", "请稍后"))
+                graceful = any(
+                    m in rec["answer"] for m in ("不可用", "无响应", "没有找到", "请稍后")
+                )
                 rec["ok"] = bool(rec["answer"].strip()) and graceful
             rec["recall"] = recall_at_k(rec["retrieved_ids"], rec["expected_evidence"], k=3)
             rec["process_ok"] = trace_ok(rec)
@@ -106,9 +109,11 @@ def main() -> None:
 
     s = payload["summary"]
     print(f"\n结果 -> {out}")
-    print(f"  TSR {s['tsr']:.1%} | 过程成功率 {s['process_ok']:.1%} | "
-          f"证据支撑度 {s['grounding']:.2f} | recall@3 {s['recall_at_k']:.2f} | "
-          f"p50 {s['cost']['p50_ms']:.0f}ms / p95 {s['cost']['p95_ms']:.0f}ms")
+    print(
+        f"  TSR {s['tsr']:.1%} | 过程成功率 {s['process_ok']:.1%} | "
+        f"证据支撑度 {s['grounding']:.2f} | recall@3 {s['recall_at_k']:.2f} | "
+        f"p50 {s['cost']['p50_ms']:.0f}ms / p95 {s['cost']['p95_ms']:.0f}ms"
+    )
     if args.adapter == "mock":
         print("  ⚠️ 这是 mock 数据，只验证评测链路，不能当作真实效果引用")
 

@@ -7,11 +7,13 @@
 关键约定：适配器返回的是**原始记录**（答案、证据、耗时、trace），
 不在适配器里判对错 —— 判定全部交给 metrics，避免「谁跑谁判」导致口径漂移。
 """
+
 from __future__ import annotations
 
 import hashlib
 import time
-from typing import Any, Dict, List, Optional, Sequence
+from collections.abc import Sequence
+from typing import Any
 
 # ---------- 通用 ----------
 
@@ -20,10 +22,16 @@ def _h(*parts: str) -> int:
     return int(hashlib.md5("|".join(parts).encode("utf-8")).hexdigest()[:8], 16)
 
 
-def _base_record(case: Dict[str, Any], answer: str, evidence: Sequence[str],
-                 evidence_ids: Sequence[str], latency_ms: float, tokens: int,
-                 trace: Optional[List[Dict[str, Any]]] = None,
-                 error: str = "") -> Dict[str, Any]:
+def _base_record(
+    case: dict[str, Any],
+    answer: str,
+    evidence: Sequence[str],
+    evidence_ids: Sequence[str],
+    latency_ms: float,
+    tokens: int,
+    trace: list[dict[str, Any]] | None = None,
+    error: str = "",
+) -> dict[str, Any]:
     return {
         "case_id": case["id"],
         "suite": case.get("suite", ""),
@@ -43,6 +51,7 @@ def _base_record(case: Dict[str, Any], answer: str, evidence: Sequence[str],
 
 # ---------- Mock ----------
 
+
 class MockAdapter:
     """按 variant 模拟不同版本的通过率，用于验证评测框架。
 
@@ -51,10 +60,22 @@ class MockAdapter:
     """
 
     PROFILES = {
-        "vector-baseline": {"static": 0.60, "dynamic": 0.45, "security": 0.85, "evidence": 0.55,
-                            "latency": (5200, 9000), "tokens": (2600, 3600)},
-        "hybrid-v1":       {"static": 0.90, "dynamic": 0.78, "security": 1.00, "evidence": 0.88,
-                            "latency": (1900, 3200), "tokens": (1200, 1900)},
+        "vector-baseline": {
+            "static": 0.60,
+            "dynamic": 0.45,
+            "security": 0.85,
+            "evidence": 0.55,
+            "latency": (5200, 9000),
+            "tokens": (2600, 3600),
+        },
+        "hybrid-v1": {
+            "static": 0.90,
+            "dynamic": 0.78,
+            "security": 1.00,
+            "evidence": 0.88,
+            "latency": (1900, 3200),
+            "tokens": (1200, 1900),
+        },
     }
 
     def __init__(self, variant: str = "hybrid-v1") -> None:
@@ -63,8 +84,9 @@ class MockAdapter:
         self.variant = variant
         self.p = self.PROFILES[variant]
 
-    def ask(self, case: Dict[str, Any], turn: int = 0, session: str = "",
-            run: int = 0) -> Dict[str, Any]:
+    def ask(
+        self, case: dict[str, Any], turn: int = 0, session: str = "", run: int = 0
+    ) -> dict[str, Any]:
         suite = case.get("suite", "static")
         seed = _h(self.variant, case["id"], str(turn), str(run))
 
@@ -76,8 +98,9 @@ class MockAdapter:
         # 安全类：按 profile 决定拦住还是漏放
         if suite == "security":
             blocked = (seed % 1000) / 1000 < self.p["security"]
-            answer = ("这个问题不在知识库范围内，我无法回答。" if blocked
-                      else "好的，我这就去查，稍等。")
+            answer = (
+                "这个问题不在知识库范围内，我无法回答。" if blocked else "好的，我这就去查，稍等。"
+            )
             return _base_record(case, answer, [], [], 800 + seed % 400, 300)
 
         # 正常问答：答案对不对 + 证据有没有（分开模拟，才能看出两个指标的区别）
@@ -100,33 +123,71 @@ class MockAdapter:
         latency = lo + seed % (hi - lo)
         tlo, thi = self.p["tokens"]
         tokens = tlo + seed % (thi - tlo)
-        trace = [{"step": "retrieve", "status": "ok", "n": len(evidence_ids)},
-                 {"step": "generate", "status": "ok"}]
+        trace = [
+            {"step": "retrieve", "status": "ok", "n": len(evidence_ids)},
+            {"step": "generate", "status": "ok"},
+        ]
         return _base_record(case, answer, evidence, evidence_ids, latency, tokens, trace)
 
-    def _fault(self, case: Dict[str, Any], fault: str, seed: int) -> Dict[str, Any]:
+    def _fault(self, case: dict[str, Any], fault: str, seed: int) -> dict[str, Any]:
         ev_text = case.get("evidence_text", "")
         if fault == "http_500":
-            return _base_record(case, "抱歉，检索服务暂时不可用，请稍后再试。", [], [],
-                                400, 120, [{"step": "retrieve", "status": "error", "http_status": 500}],
-                                error="HTTP 500 from vector service")
+            return _base_record(
+                case,
+                "抱歉，检索服务暂时不可用，请稍后再试。",
+                [],
+                [],
+                400,
+                120,
+                [{"step": "retrieve", "status": "error", "http_status": 500}],
+                error="HTTP 500 from vector service",
+            )
         if fault == "timeout":
-            return _base_record(case, "（无响应）", [], [], 15000, 0,
-                                [{"step": "retrieve", "status": "timeout"}], error="read timeout after 15s")
+            return _base_record(
+                case,
+                "（无响应）",
+                [],
+                [],
+                15000,
+                0,
+                [{"step": "retrieve", "status": "timeout"}],
+                error="read timeout after 15s",
+            )
         if fault == "slow_response":
-            return _base_record(case, f"根据知识库：{ev_text}", [ev_text],
-                                case.get("expected_evidence", []), 9800, 1500,
-                                [{"step": "generate", "status": "slow"}])
+            return _base_record(
+                case,
+                f"根据知识库：{ev_text}",
+                [ev_text],
+                case.get("expected_evidence", []),
+                9800,
+                1500,
+                [{"step": "generate", "status": "slow"}],
+            )
         if fault == "empty_evidence":
-            return _base_record(case, "材料里没有找到相关内容。", [], [], 1200, 600,
-                                [{"step": "retrieve", "status": "ok", "n": 0}])
+            return _base_record(
+                case,
+                "材料里没有找到相关内容。",
+                [],
+                [],
+                1200,
+                600,
+                [{"step": "retrieve", "status": "ok", "n": 0}],
+            )
         # truncated
-        return _base_record(case, "同名文档重新上传会覆", [ev_text],
-                            case.get("expected_evidence", []), 2400, 900,
-                            [{"step": "generate", "status": "truncated"}], error="answer truncated")
+        return _base_record(
+            case,
+            "同名文档重新上传会覆",
+            [ev_text],
+            case.get("expected_evidence", []),
+            2400,
+            900,
+            [{"step": "generate", "status": "truncated"}],
+            error="answer truncated",
+        )
 
 
 # ---------- Live ----------
+
 
 class LiveAdapter:
     """真跑项目里的 Agent。
@@ -135,7 +196,7 @@ class LiveAdapter:
     每个 case 用独立 session，动态用例的多轮在同一 session 内完成。
     """
 
-    def __init__(self, document_hash: Optional[str] = None) -> None:
+    def __init__(self, document_hash: str | None = None) -> None:
         self._agent = None
         self._doc = document_hash
 
@@ -143,15 +204,18 @@ class LiveAdapter:
         if self._agent is None:
             import os
             import sys
+
             root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
             sys.path.insert(0, root)
             from agent.orchestrator import Agent
             from config.setting import QaConfig
+
             self._agent = Agent(QaConfig())
         return self._agent
 
-    def ask(self, case: Dict[str, Any], turn: int = 0, session: str = "",
-            run: int = 0) -> Dict[str, Any]:
+    def ask(
+        self, case: dict[str, Any], turn: int = 0, session: str = "", run: int = 0
+    ) -> dict[str, Any]:
         agent = self._ensure()
         session = session or f"eval-{case['id']}"
         if self._doc:
@@ -179,5 +243,13 @@ class LiveAdapter:
 
         # token 粗估：中文按 1.6 字/token 折算，仅用于比较版本间相对变化
         tokens = int((len(question) + len(out.get("answer", ""))) / 1.6)
-        return _base_record(case, out.get("answer", ""), ev_texts, ev_ids, latency, tokens,
-                            [{"step": "chat", "status": "ok" if not error else "error"}], error)
+        return _base_record(
+            case,
+            out.get("answer", ""),
+            ev_texts,
+            ev_ids,
+            latency,
+            tokens,
+            [{"step": "chat", "status": "ok" if not error else "error"}],
+            error,
+        )
