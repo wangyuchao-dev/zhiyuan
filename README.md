@@ -37,7 +37,7 @@
 ```
 config/       setting.py（全部可调参数 + 环境分层）· prompts.py（6 块提示词）· version.py（版本单一来源）
 indexing/     clean（清洗与质量门槛）· hash_calculate（MD5 指纹）· upload_split（PDF 切分）
-              parent_child（父子分块）· vector_storage（写 Chroma）· indexing_pipeline
+              parent_child（父子分块，已实现未启用，原因见文件头）· vector_storage · indexing_pipeline
 querying/     query_rewrite · vector_retriever · bm25_retriever · rrf · hybrid_retriever
               retrank（精排）· answer（生成）· pipeline（串联）· eval_retrieval / eval_single_doc（评测）
 agent/        intent（意图）· chat_history_manager · facts_manager · summary_manager

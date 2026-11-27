@@ -98,6 +98,8 @@
 
 **代码**：`indexing/parent_child.py`（child 检索 + 回溯 parent，按 parent 去重）+ `querying/parallel.py`（并行 + 单路超时 + RRF 融合，单路挂了自动降级）。
 
+> 注：`parent_child` 已实现并有测试，但**未接入主链路**。对照实测显示，当前 1300–4400 字的语料下单轮问答用 200 字 child 与用 980 字 parent 的答案完全一致，而 parent 更吃上下文预算，所以按现状不接。判断依据写在 `parent_child.py` 文件头。
+
 ## 8. MCP 与 SKILL 的区别
 
 **结论**：MCP 解决「**能不能碰到**外部系统」，SKILL 解决「碰到之后**怎么干**」。两者是合作关系，不是替代。
