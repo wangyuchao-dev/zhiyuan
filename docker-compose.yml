@@ -1,0 +1,38 @@
+# 本地/测试环境一键起。生产用 K8s 或云托管，不要直接 compose 上线。
+#   docker compose up -d --build
+#   docker compose logs -f app
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: zhiyuan:local
+    container_name: zhiyuan-app
+    env_file:
+      - .env
+    environment:
+      APP_ENV: ${APP_ENV:-production}
+      TZ: Asia/Shanghai
+    ports:
+      - "8000:8000"
+    volumes:
+      # 会话记忆与向量库必须持久化：容器重建后要能接着用，不用重新建库
+      - ./runtime:/app/runtime
+      - ./indexing/chroma_db:/app/indexing/chroma_db
+      - ./uploads:/app/uploads
+    restart: unless-stopped
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import sys,urllib.request; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=2).status==200 else 1)"
+      interval: 30s
+      timeout: 3s
+      start_period: 20s
+      retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
