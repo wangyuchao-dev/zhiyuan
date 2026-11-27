@@ -2,8 +2,8 @@
 
 [![CI](https://github.com/wangyuchao-dev/zhiyuan/actions/workflows/ci.yml/badge.svg)](https://github.com/wangyuchao-dev/zhiyuan/actions/workflows/ci.yml)
 ![Python](https://img.shields.io/badge/python-3.12-blue)
-![Tests](https://img.shields.io/badge/tests-96-brightgreen)
-![Coverage](https://img.shields.io/badge/coverage-73%25-brightgreen)
+![Tests](https://img.shields.io/badge/tests-120-brightgreen)
+![Coverage](https://img.shields.io/badge/coverage-74.5%25-brightgreen)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
 把几十页制度 PDF 变成「问一句话、答案带出处」的知识库。
@@ -30,7 +30,7 @@
 | 语义类 | 11/13（85%） | 11/13（85%） | 持平——混合检索不是万灵药 |
 | 典型问答耗时 | 7 s | **2.3 s** | 规则快判意图省一次模型调用 + 无指代词时跳过改写 |
 
-单元测试 **96 个**，`pytest` **不联网、不花钱、不依赖数据库**，约 6 秒跑完，覆盖率 73%。
+单元测试 **120 个**，`pytest` **不联网、不花钱、不依赖数据库**，约 6 秒跑完，覆盖率 74.5%。
 
 ## 目录
 
@@ -147,6 +147,33 @@ powershell -ExecutionPolicy Bypass -File .\scripts\check.ps1
 | `/api/version` | 跑的是哪个版本 | — |
 
 `/api/ready` 只检查必要条件（Key 是否配、向量库目录是否在），**不真的调一次模型** —— 它会被每几秒打一次，调模型既费钱又会被限流。
+
+## 主链路：一次问答经过哪些环节
+
+每条线都是一个可单测的模块，不是散在路由函数里的 if-else：
+
+| 环节 | 做什么 | 失败时 |
+|---|---|---|
+| 清洗（入库时） | 页眉页脚按整篇识别、页码/目录/全角字符逐页清 | 清洗后不足 50 字或丢失超 70% → **拒收**（400），不灌脏数据 |
+| 切分 | 在句号/问号/分号后切，不腰斩句子 | — |
+| 意图 | 规则快判（寒暄/投诉/文档特征词）→ 判不出才调模型 | 模型超时 → 按「需要查文档」处理 |
+| 改写 | 有指代词才改写，否则跳过（省一次调用） | 改写失败 → 用原问题检索 |
+| 召回 | 向量 + BM25 **并行**，RRF 按名次融合（0.7/0.3） | 单路异常 → 只用另一路，记 `last_degraded` |
+| 精排 | qwen3-rerank + 阈值 0.3 | 接口抖动 → 退化为召回顺序，不过阈值 |
+| 预算 | 超总预算的证据整条丢弃，编号重排 | — |
+| 生成 | 只依据上下文，标注 `[N]` 出处；命中技能时按其格式作答 | — |
+| 校验 | 错误码/带单位数字/日期必须在证据里；引用越界只移除编号 | 不通过 → 换保守话术（不自动改数字） |
+
+### 实测（单文档，本机）
+
+| 指标 | 数值 | 说明 |
+|---|---|---|
+| 检索段耗时（冷） | 308–707 ms | 含向量召回 + BM25 + 精排；首次含 BM25 建索引 |
+| 检索段耗时（命中缓存） | < 2 ms | 进程内缓存；换 Redis 约一次网络往返 |
+| 完整问答（冷 → 热） | 2958 ms → 1689 ms | 缓存省掉检索，生成仍要调模型 |
+| 技能命中 | 468 字注入 | 「E1017 是什么错误」命中 `fault-code-lookup`，未命中的问题注入 0 字 |
+| 上下文预算 | 2600 token | 实测单次用 614–693 token，4 条证据全部装下、丢弃 0 条 |
+| 校验拦截 | 见测试 | 「保留 99 年」拦下；「三年」与「3 年」都放行（归一化后一致） |
 
 ## 四个我认为值得说的设计
 

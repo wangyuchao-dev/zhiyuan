@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "zhiyuan"
-version = "1.2.0"
+version = "1.3.0"
 description = "知渊 · 企业知识库问答 Agent（意图路由 + 三层记忆 + 混合检索 + 精排 + 七维评测）"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -56,6 +56,8 @@ ignore = ["E501"]
 "tests/*" = ["B011", "SIM117", "E402", "UP031"]
 # 这两个是离线评测脚本：本身要改 sys.path 才能 import 项目包
 "querying/eval_*.py" = ["E402"]
+# pipeline 支持 `python querying/pipeline.py` 直接跑（自检用），同样先改 sys.path
+"querying/pipeline.py" = ["E402"]
 # FastAPI 的 File()/Form()/Depends() 写在参数默认值是框架规定写法
 "api/routes/*" = ["B008"]
 # 评测脚本是离线工具，允许直接 print
